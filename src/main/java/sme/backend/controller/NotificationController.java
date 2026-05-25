@@ -63,10 +63,7 @@ public class NotificationController {
     public ResponseEntity<ApiResponse<Void>> markAllAsRead(@AuthenticationPrincipal UserPrincipal principal) {
         // Sử dụng Enum so sánh an toàn hơn String
         UUID userId = (principal.getRole() == User.UserRole.ROLE_ADMIN) ? null : principal.getId();
-        List<Notification> unread = notificationService.getUnread(userId);
-        for (Notification n : unread) {
-            notificationService.markAsRead(n.getId());
-        }
+        notificationService.markAllAsRead(userId);
         return ResponseEntity.ok(ApiResponse.ok("Đã đánh dấu đọc tất cả", null));
     }
 }

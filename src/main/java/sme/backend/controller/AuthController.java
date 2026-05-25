@@ -17,6 +17,8 @@ import sme.backend.dto.response.AuthResponse;
 import sme.backend.dto.response.UserResponse;
 import sme.backend.security.UserPrincipal;
 import sme.backend.service.AuthService;
+import sme.backend.entity.User;
+import sme.backend.exception.BusinessException;
 
 import java.util.List;
 import java.util.Map;
@@ -70,21 +72,20 @@ public class AuthController {
             @RequestBody SwitchBranchRequest req) {
         return ResponseEntity.ok(ApiResponse.ok(
                 "Chuyển chi nhánh thành công",
-                authService.switchBranch(principal, req.getWarehouseId())
-        ));
+                authService.switchBranch(principal, req.getWarehouseId())));
     }
 
     /** GET /auth/me */
     @GetMapping("/me")
     public ResponseEntity<ApiResponse<UserResponse>> getCurrentUser(
             @AuthenticationPrincipal UserPrincipal principal) {
-        // ĐÃ SỬA: Loại bỏ authService.mapToResponse() vì luồng này đã trả về UserResponse
+        // ĐÃ SỬA: Loại bỏ authService.mapToResponse() vì luồng này đã trả về
+        // UserResponse
         return ResponseEntity.ok(ApiResponse.ok(
                 authService.getAllUsers().stream()
                         .filter(u -> u.getId().equals(principal.getId()))
                         .findFirst()
-                        .orElseThrow()
-        ));
+                        .orElseThrow()));
     }
 
     /** PUT /auth/change-password */
@@ -96,48 +97,77 @@ public class AuthController {
         return ResponseEntity.ok(ApiResponse.ok("Đổi mật khẩu thành công", null));
     }
 
-    // ── User Management (ADMIN only) ──────────────────────────
-
-
+    // ── User Management (ADMIN/MANAGER) ──────────────────────────
 
     /** POST /auth/users */
     @PostMapping("/users")
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasAnyRole('ADMIN', 'MANAGER')")
     public ResponseEntity<ApiResponse<UserResponse>> createUser(
+            @AuthenticationPrincipal UserPrincipal principal,
             @Valid @RequestBody CreateUserRequest req) {
+        if (principal.getRole() == User.UserRole.ROLE_MANAGER) {
+            if ("ROLE_ADMIN".equals(req.getRole()) || "ROLE_MANAGER".equals(req.getRole())) {
+                throw new BusinessException("FORBIDDEN", "Quản lý không có quyền tạo tài khoản Admin hoặc Manager");
+            }
+            req.setWarehouseId(principal.getWarehouseId());
+        }
         return ResponseEntity.status(HttpStatus.CREATED)
                 .body(ApiResponse.created(authService.createUser(req)));
     }
 
     /** PATCH /auth/users/{id}/activate */
     @PatchMapping("/users/{id}/activate")
-    @PreAuthorize("hasRole('ADMIN')")
-    public ResponseEntity<ApiResponse<UserResponse>> activateUser(@PathVariable UUID id) {
+    @PreAuthorize("hasAnyRole('ADMIN', 'MANAGER')")
+    public ResponseEntity<ApiResponse<UserResponse>> activateUser(
+            @AuthenticationPrincipal UserPrincipal principal,
+            @PathVariable UUID id) {
+        if (principal.getRole() == User.UserRole.ROLE_MANAGER) {
+            authService.validateManagerAccessToUser(principal.getWarehouseId(), id);
+        }
         return ResponseEntity.ok(ApiResponse.ok(authService.toggleUserActive(id, true)));
     }
 
     /** PATCH /auth/users/{id}/deactivate */
     @PatchMapping("/users/{id}/deactivate")
-    @PreAuthorize("hasRole('ADMIN')")
-    public ResponseEntity<ApiResponse<UserResponse>> deactivateUser(@PathVariable UUID id) {
+    @PreAuthorize("hasAnyRole('ADMIN', 'MANAGER')")
+    public ResponseEntity<ApiResponse<UserResponse>> deactivateUser(
+            @AuthenticationPrincipal UserPrincipal principal,
+            @PathVariable UUID id) {
+        if (principal.getRole() == User.UserRole.ROLE_MANAGER) {
+            authService.validateManagerAccessToUser(principal.getWarehouseId(), id);
+        }
         return ResponseEntity.ok(ApiResponse.ok(authService.toggleUserActive(id, false)));
     }
+
     /** GET /auth/users */
     @GetMapping("/users")
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasAnyRole('ADMIN', 'MANAGER')")
     public ResponseEntity<ApiResponse<List<UserResponse>>> getAllUsers(
+            @AuthenticationPrincipal UserPrincipal principal,
             @RequestParam(required = false) String keyword,
             @RequestParam(required = false) String role,
             @RequestParam(required = false) UUID warehouseId) {
-        return ResponseEntity.ok(ApiResponse.ok(authService.searchUsers(keyword, role, warehouseId)));
+        UUID searchWarehouseId = warehouseId;
+        if (principal.getRole() == User.UserRole.ROLE_MANAGER) {
+            searchWarehouseId = principal.getWarehouseId();
+        }
+        return ResponseEntity.ok(ApiResponse.ok(authService.searchUsers(keyword, role, searchWarehouseId)));
     }
 
     /** PUT /auth/users/{id} */
     @PutMapping("/users/{id}")
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasAnyRole('ADMIN', 'MANAGER')")
     public ResponseEntity<ApiResponse<UserResponse>> updateUser(
-            @PathVariable UUID id, 
+            @AuthenticationPrincipal UserPrincipal principal,
+            @PathVariable UUID id,
             @RequestBody CreateUserRequest req) {
+        if (principal.getRole() == User.UserRole.ROLE_MANAGER) {
+            authService.validateManagerAccessToUser(principal.getWarehouseId(), id);
+            if ("ROLE_ADMIN".equals(req.getRole()) || "ROLE_MANAGER".equals(req.getRole())) {
+                throw new BusinessException("FORBIDDEN", "Quản lý không có quyền gán quyền Admin hoặc Manager");
+            }
+            req.setWarehouseId(principal.getWarehouseId());
+        }
         return ResponseEntity.ok(ApiResponse.ok(authService.updateUser(id, req)));
     }
 }

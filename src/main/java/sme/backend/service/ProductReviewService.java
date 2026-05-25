@@ -35,6 +35,12 @@ public class ProductReviewService {
                 .map(this::mapToResponse);
     }
 
+    @Transactional(readOnly = true)
+    public Page<ProductReviewResponse> getAllReviews(Boolean status, Pageable pageable) {
+        return productReviewRepository.findAllForAdmin(status, pageable)
+                .map(this::mapToResponse);
+    }
+
     @Transactional
     public ProductReviewResponse createReview(UUID customerId, CreateReviewRequest req) {
         // Validate Order
@@ -63,8 +69,9 @@ public class ProductReviewService {
                 .orderId(req.getOrderId())
                 .rating(req.getRating())
                 .comment(req.getComment())
+                .imageUrls(req.getImageUrls())
                 .isVerifiedPurchase(true)
-                .isApproved(false)
+                .isApproved(true)
                 .build();
 
         ProductReview saved = productReviewRepository.save(review);
@@ -73,10 +80,10 @@ public class ProductReviewService {
     }
 
     @Transactional
-    public ProductReviewResponse approveReview(UUID reviewId) {
+    public ProductReviewResponse toggleReviewStatus(UUID reviewId) {
         ProductReview review = productReviewRepository.findById(reviewId)
                 .orElseThrow(() -> new ResourceNotFoundException("ProductReview", reviewId));
-        review.setIsApproved(true);
+        review.setIsApproved(!review.getIsApproved());
         ProductReview saved = productReviewRepository.save(review);
         updateProductRating(review.getProductId());
         return mapToResponse(saved);
@@ -111,7 +118,9 @@ public class ProductReviewService {
                 .customerName(customerName)
                 .rating(review.getRating())
                 .comment(review.getComment())
+                .imageUrls(review.getImageUrls())
                 .isVerifiedPurchase(review.getIsVerifiedPurchase())
+                .isApproved(review.getIsApproved())
                 .createdAt(review.getCreatedAt())
                 .build();
     }

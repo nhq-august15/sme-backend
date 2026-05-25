@@ -116,8 +116,9 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ApiError> handleGeneral(Exception ex, HttpServletRequest request) {
         log.error("Unhandled exception at {}: {}", request.getRequestURI(), ex.getMessage(), ex);
+        String detailedMessage = "Lỗi hệ thống: " + ex.getClass().getName() + " - " + ex.getMessage();
         return buildError(HttpStatus.INTERNAL_SERVER_ERROR, "INTERNAL_ERROR",
-                "Đã xảy ra lỗi hệ thống. Vui lòng liên hệ hỗ trợ.", request);
+                detailedMessage, request);
     }
 
     // ---------------------------------------------------------------

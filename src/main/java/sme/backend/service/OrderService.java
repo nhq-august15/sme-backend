@@ -35,8 +35,12 @@ public class OrderService {
     private final InternalTransferRepository transferRepository;
     private final UserRepository userRepository;
     private final EmailService emailService;
+    private final InvoiceRepository invoiceRepository;
+    private final ProductReviewRepository productReviewRepository; // <-- ĐÃ THÊM
 
     private final EntityManager entityManager;
+
+
 
     private UUID getCurrentUserIdSafe() {
         var auth = org.springframework.security.core.context.SecurityContextHolder.getContext().getAuthentication();
@@ -92,13 +96,19 @@ public class OrderService {
                         "Sản phẩm '" + product.getName() + "' không đủ tồn kho trên toàn hệ thống.");
             }
             BigDecimal subtotal = product.getRetailPrice().multiply(BigDecimal.valueOf(itemReq.getQuantity()));
-            orderItems.add(OrderItem.builder().productId(product.getId()).quantity(itemReq.getQuantity())
-                    .unitPrice(product.getRetailPrice()).macPrice(product.getMacPrice()).subtotal(subtotal).build());
+            orderItems.add(OrderItem.builder()
+                    .productId(product.getId())
+                    .quantity(itemReq.getQuantity())
+                    .unitPrice(product.getRetailPrice())
+                    .macPrice(product.getMacPrice() != null ? product.getMacPrice() : BigDecimal.ZERO)
+                    .subtotal(subtotal)
+                    .build());
             totalAmount = totalAmount.add(subtotal);
         }
 
         BigDecimal shippingFee = req.getShippingFee() != null ? req.getShippingFee() : BigDecimal.ZERO;
-        BigDecimal finalAmount = totalAmount.add(shippingFee);
+        BigDecimal discountAmount = req.getDiscountAmount() != null ? req.getDiscountAmount() : BigDecimal.ZERO;
+        BigDecimal finalAmount = totalAmount.add(shippingFee).subtract(discountAmount);
 
         UUID assignedWarehouseId = null;
         Map<String, Object> chosenPlan = null;
@@ -130,7 +140,7 @@ public class OrderService {
                 .code(generateOrderCode()).customerId(customer.getId()).assignedWarehouseId(assignedWarehouseId)
                 .type(orderType).shippingName(req.getShippingName()).shippingPhone(req.getShippingPhone())
                 .shippingAddress(req.getShippingAddress()).provinceCode(req.getProvinceCode()).totalAmount(totalAmount)
-                .shippingFee(shippingFee).finalAmount(finalAmount).paymentMethod(req.getPaymentMethod())
+                .shippingFee(shippingFee).discountAmount(discountAmount).finalAmount(finalAmount).paymentMethod(req.getPaymentMethod())
                 .paymentStatus(Order.PaymentStatus.UNPAID).note(req.getNote())
                 .status(initialStatus)
                 .build();
@@ -153,11 +163,30 @@ public class OrderService {
             for (Map.Entry<UUID, List<Map<String, Object>>> entry : transfersBySource.entrySet()) {
                 UUID sourceWarehouseId = entry.getKey();
 
+                UUID transferCreatorId = null;
+                boolean isEmployee = false;
+                if (currentUserId != null) {
+                    isEmployee = userRepository.existsById(currentUserId);
+                }
+                
+                if (isEmployee) {
+                    transferCreatorId = currentUserId;
+                } else {
+                    transferCreatorId = userRepository.findByRoleAndIsActiveTrue(User.UserRole.ROLE_ADMIN)
+                            .stream().findFirst().map(User::getId).orElse(null);
+                    if (transferCreatorId == null) {
+                        transferCreatorId = userRepository.findAllActive().stream().findFirst().map(User::getId).orElse(null);
+                    }
+                    if (transferCreatorId == null) {
+                        throw new BusinessException("SYSTEM_ERROR", "Không thể tự động luân chuyển kho: Hệ thống không có nhân viên nào đang hoạt động.");
+                    }
+                }
+
                 InternalTransfer transfer = InternalTransfer.builder()
                         .code("TRF-AUTO-" + System.currentTimeMillis() + "-"
                                 + sourceWarehouseId.toString().substring(0, 4))
                         .fromWarehouseId(sourceWarehouseId).toWarehouseId(assignedWarehouseId)
-                        .createdByUserId(currentUserId) // Có thể null nếu Guest
+                        .createdByUserId(transferCreatorId) // Gán ID Nhân viên hợp lệ
                         .status(InternalTransfer.TransferStatus.DRAFT)
                         .referenceOrderId(order.getId())
                         .note("Tự động tạo - Gom hàng cho Đơn #" + order.getCode())
@@ -375,12 +404,26 @@ public class OrderService {
         }
 
         if (status == Order.OrderStatus.RETURNED && order.getAssignedWarehouseId() != null) {
-            order.getItems().forEach(item -> inventoryService.returnToStock(
+            order.getItems().forEach(item -> {
+                inventoryService.returnToStock(
                     item.getProductId(), order.getAssignedWarehouseId(), item.getQuantity(), orderId, "RETURNED_ORDER",
-                    changedBy));
+                    changedBy);
+                Product p = productRepository.findById(item.getProductId()).orElse(null);
+                if (p != null) {
+                    p.setSoldQuantity(Math.max(0, (p.getSoldQuantity() != null ? p.getSoldQuantity() : 0) - item.getQuantity()));
+                    productRepository.save(p);
+                }
+            });
         }
 
         if (status == Order.OrderStatus.DELIVERED) {
+            order.getItems().forEach(item -> {
+                Product p = productRepository.findById(item.getProductId()).orElse(null);
+                if (p != null) {
+                    p.setSoldQuantity((p.getSoldQuantity() != null ? p.getSoldQuantity() : 0) + item.getQuantity());
+                    productRepository.save(p);
+                }
+            });
             if ("COD".equals(order.getPaymentMethod())) {
                 order.setPaymentStatus(Order.PaymentStatus.PAID);
                 recordCODRevenue(order);
@@ -417,6 +460,18 @@ public class OrderService {
         return mapToResponse(orderRepository.save(order));
     }
 
+    @Transactional
+    public void markAsPaid(UUID orderId, String gateway) {
+        Order order = orderRepository.findByIdWithDetails(orderId).orElseThrow();
+        if (order.getPaymentStatus() == Order.PaymentStatus.UNPAID) {
+            order.setPaymentStatus(Order.PaymentStatus.PAID);
+            if ("BANK_TRANSFER".equals(order.getPaymentMethod())) {
+                recordBankTransferRevenue(order, "SYSTEM_" + gateway);
+            }
+            orderRepository.save(order);
+        }
+    }
+
     private void recordCODRevenue(Order order) {
         if (order.getAssignedWarehouseId() == null)
             return;
@@ -424,6 +479,65 @@ public class OrderService {
                 .fundType(CashbookTransaction.FundType.CASH_111).transactionType(CashbookTransaction.TransactionType.IN)
                 .referenceType("SALE_ONLINE").referenceId(order.getId()).amount(order.getFinalAmount())
                 .description("Thu COD đơn hàng #" + order.getCode()).createdBy("SYSTEM").build());
+    }
+
+    @Transactional
+    public OrderResponse assignWarehouse(UUID orderId, UUID newWarehouseId, String reason, String changedBy) {
+        Order order = orderRepository.findByIdWithDetails(orderId).orElseThrow();
+        if (order.getStatus() != Order.OrderStatus.PENDING && order.getStatus() != Order.OrderStatus.WAITING_FOR_CONSOLIDATION) {
+            throw new BusinessException("INVALID_STATUS", "Chỉ có thể chuyển kho khi đơn hàng đang chờ xử lý hoặc chờ gom hàng.");
+        }
+
+        Warehouse oldWarehouse = null;
+        if (order.getAssignedWarehouseId() != null) {
+            oldWarehouse = warehouseRepository.findById(order.getAssignedWarehouseId()).orElse(null);
+        }
+        Warehouse newWarehouse = warehouseRepository.findById(newWarehouseId).orElseThrow();
+
+        // 1. Hủy các phiếu chuyển kho (DRAFT/DISPATCHED) liên quan đến đơn hàng này nếu đang gom hàng
+        if (order.getStatus() == Order.OrderStatus.WAITING_FOR_CONSOLIDATION) {
+            List<InternalTransfer> transfers = transferRepository.findByReferenceOrderId(orderId);
+            for (InternalTransfer transfer : transfers) {
+                if (transfer.getStatus() == InternalTransfer.TransferStatus.DRAFT) {
+                    transfer.setStatus(InternalTransfer.TransferStatus.CANCELLED);
+                    transfer.setNote((transfer.getNote() != null ? transfer.getNote() : "") + " | Hủy do Override đổi kho xử lý.");
+                    transferRepository.save(transfer);
+                    // Nhả tồn kho đã giữ ở kho gửi (nơi sẽ lấy hàng đi gom)
+                    for (TransferItem tItem : transfer.getItems()) {
+                        inventoryService.releaseReservation(tItem.getProductId(), transfer.getFromWarehouseId(), tItem.getQuantity(), orderId, changedBy);
+                    }
+                }
+            }
+        }
+
+        // 2. Nhả tồn kho đã giữ tại kho ĐÓNG GÓI cũ
+        if (order.getAssignedWarehouseId() != null) {
+            for (OrderItem item : order.getItems()) {
+                // TODO: Chỉ nhả số lượng thực tế đã giữ tại kho này (trừ đi phần đã bị kẹt ở các transfer đang đi đường)
+                // Để đơn giản ở MVP, nhả toàn bộ số lượng yêu cầu của item
+                inventoryService.releaseReservation(item.getProductId(), order.getAssignedWarehouseId(), item.getQuantity(), orderId, changedBy);
+            }
+        }
+
+        // 3. Cập nhật kho mới và giữ tồn kho tại kho mới
+        order.setAssignedWarehouseId(newWarehouseId);
+        String note = "Điều hướng từ " + (oldWarehouse != null ? oldWarehouse.getName() : "Chưa gán") + " sang " + newWarehouse.getName();
+        if (reason != null && !reason.isBlank()) {
+            note += " | Lý do: " + reason;
+        }
+
+        // Giữ tồn kho ở kho mới (giả sử có đủ, nếu không đủ ở MVP sẽ âm tạm thời hoặc cần tính lại logic gom hàng)
+        for (OrderItem item : order.getItems()) {
+            inventoryService.reserveForOnlineOrderBatch(
+                List.of(Map.of("productId", item.getProductId(), "quantity", item.getQuantity())), 
+                newWarehouseId, orderId, changedBy
+            );
+        }
+
+        // Tạm thời nếu Override thủ công, ta đẩy về PENDING để kho mới xử lý, hủy trạng thái WAITING_FOR_CONSOLIDATION
+        order.transitionTo(Order.OrderStatus.PENDING, note, changedBy);
+
+        return mapToResponse(orderRepository.save(order));
     }
 
     private void recordCashRevenue(Order order, String changedBy) {
@@ -534,10 +648,17 @@ public class OrderService {
         List<OrderResponse.ItemResponse> items = order.getItems() == null ? List.of()
                 : order.getItems().stream().map(i -> {
                     var product = productRepository.findById(i.getProductId()).orElse(null);
+                    boolean isRev = false;
+                    if (order.getCustomerId() != null) {
+                        isRev = productReviewRepository.existsByProductIdAndCustomerIdAndOrderId(
+                                i.getProductId(), order.getCustomerId(), order.getId());
+                    }
                     return OrderResponse.ItemResponse.builder().productId(i.getProductId())
                             .productName(product != null ? product.getName() : null)
                             .isbnBarcode(product != null ? product.getIsbnBarcode() : null).quantity(i.getQuantity())
-                            .unitPrice(i.getUnitPrice()).subtotal(i.getSubtotal()).build();
+                            .unitPrice(i.getUnitPrice()).subtotal(i.getSubtotal())
+                            .isReviewed(isRev) // <-- ĐÃ THÊM
+                            .build();
                 }).toList();
 
         List<OrderResponse.StatusHistoryResponse> history = order.getStatusHistory() == null ? List.of()
@@ -586,5 +707,58 @@ public class OrderService {
                         : "Hệ thống")
                 .createdAt(order.getCreatedAt()).updatedAt(order.getUpdatedAt())
                 .items(items).statusHistory(history).build();
+    }
+
+    public Map<String, Object> getOrderStats(UUID warehouseId, Order.OrderStatus status, Order.OrderType type, String keyword, String source) {
+        long totalCount = 0;
+        long pendingCount = 0;
+        long paidCount = 0;
+        double totalRevenue = 0.0;
+
+        if ("ONLINE".equals(source) || "ALL".equals(source) || source == null) {
+            Map<String, Object> oStats = orderRepository.getOrderStats(
+                warehouseId, 
+                status, 
+                type, 
+                keyword,
+                Order.OrderStatus.PENDING,
+                Order.PaymentStatus.PAID,
+                Order.OrderStatus.CANCELLED
+            );
+            if (oStats != null) {
+                totalCount += ((Number) oStats.getOrDefault("totalCount", 0)).longValue();
+                pendingCount += ((Number) oStats.getOrDefault("pendingCount", 0)).longValue();
+                paidCount += ((Number) oStats.getOrDefault("paidCount", 0)).longValue();
+                totalRevenue += ((Number) oStats.getOrDefault("totalRevenue", 0)).doubleValue();
+            }
+        }
+
+        if ("OFFLINE".equals(source) || "ALL".equals(source) || source == null) {
+            String invType = null;
+            if (status != null) {
+                if (status == Order.OrderStatus.DELIVERED) invType = "SALE";
+                else if (status == Order.OrderStatus.RETURNED) invType = "RETURN";
+                else if (status == Order.OrderStatus.CANCELLED) invType = "VOIDED";
+                else {
+                    invType = "NONE";
+                }
+            }
+            if (!"NONE".equals(invType)) {
+                Map<String, Object> iStats = invoiceRepository.getInvoiceStats(warehouseId, invType, keyword);
+                if (iStats != null) {
+                    totalCount += ((Number) iStats.getOrDefault("totalCount", 0)).longValue();
+                    pendingCount += ((Number) iStats.getOrDefault("pendingCount", 0)).longValue();
+                    paidCount += ((Number) iStats.getOrDefault("paidCount", 0)).longValue();
+                    totalRevenue += ((Number) iStats.getOrDefault("totalRevenue", 0)).doubleValue();
+                }
+            }
+        }
+
+        return Map.of(
+            "totalCount", totalCount,
+            "pendingCount", pendingCount,
+            "paidCount", paidCount,
+            "totalRevenue", totalRevenue
+        );
     }
 }

@@ -153,6 +153,8 @@ public class POSService {
                                                         .multiply(BigDecimal.valueOf(cartItem.getQuantity())))
                                         .build();
                         invoice.addItem(item);
+                        product.setSoldQuantity((product.getSoldQuantity() != null ? product.getSoldQuantity() : 0) + cartItem.getQuantity());
+                        productRepository.save(product);
                         totalAmount = totalAmount.add(item.getSubtotal());
                 }
 
@@ -285,6 +287,12 @@ public class POSService {
                         inventoryService.returnToStock(ri.productId(), warehouseId, ri.quantity(), null,
                                         returnDestination,
                                         cashierId.toString());
+
+                        Product product = productRepository.findById(ri.productId()).orElse(null);
+                        if (product != null) {
+                                product.setSoldQuantity(Math.max(0, (product.getSoldQuantity() != null ? product.getSoldQuantity() : 0) - ri.quantity()));
+                                productRepository.save(product);
+                        }
                 }
 
                 returnInvoice.setTotalAmount(totalRefund);
@@ -435,6 +443,12 @@ public class POSService {
                                                 invoiceId,
                                                 "VOID_INVOICE",
                                                 managerId.toString());
+                                                
+                                Product product = productRepository.findById(item.getProductId()).orElse(null);
+                                if (product != null) {
+                                        product.setSoldQuantity(Math.max(0, (product.getSoldQuantity() != null ? product.getSoldQuantity() : 0) - item.getQuantity()));
+                                        productRepository.save(product);
+                                }
                         }
                 }
 

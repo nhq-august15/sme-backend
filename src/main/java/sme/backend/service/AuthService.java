@@ -164,7 +164,9 @@ public class AuthService {
             }
         }
 
-        if (shiftRepository.existsByCashierIdAndStatus(principal.getId(), sme.backend.entity.Shift.ShiftStatus.OPEN)) {
+        // Admin không bán hàng, không cần check ca
+        // (Nếu sau này mở rộng Role_Manager switch branch thì mới check)
+        if (principal.getRole() != User.UserRole.ROLE_ADMIN && shiftRepository.existsByCashierIdAndStatus(principal.getId(), sme.backend.entity.Shift.ShiftStatus.OPEN)) {
             throw new BusinessException("HAS_OPEN_SHIFT",
                     "Vui lòng đóng ca làm việc hiện tại trước khi chuyển chi nhánh");
         }
@@ -256,6 +258,12 @@ public class AuthService {
         if (userRepository.existsByUsername(req.getUsername())) {
             throw new BusinessException("DUPLICATE_USERNAME",
                     "Tên đăng nhập '" + req.getUsername() + "' đã tồn tại");
+        }
+
+        // Validate username: chỉ cho phép chữ không dấu, số, dấu chấm, gạch dưới
+        if (!req.getUsername().matches("^[a-zA-Z0-9._]+$")) {
+            throw new BusinessException("INVALID_USERNAME",
+                    "Tên đăng nhập chỉ được chứa chữ cái không dấu, số, dấu chấm và gạch dưới");
         }
 
         User.UserRole role;
@@ -391,5 +399,16 @@ public class AuthService {
                 .lastLoginAt(user.getLastLoginAt())
                 .posSettings(user.getPosSettings())
                 .build();
+    }
+
+    public void validateManagerAccessToUser(UUID managerWarehouseId, UUID targetUserId) {
+        User targetUser = userRepository.findById(targetUserId)
+                .orElseThrow(() -> new ResourceNotFoundException("User", targetUserId));
+        if (targetUser.getRole() == User.UserRole.ROLE_ADMIN || targetUser.getRole() == User.UserRole.ROLE_MANAGER) {
+            throw new BusinessException("FORBIDDEN", "Quản lý không có quyền sửa đổi tài khoản Admin hoặc Manager khác");
+        }
+        if (managerWarehouseId == null || !managerWarehouseId.equals(targetUser.getWarehouseId())) {
+            throw new BusinessException("FORBIDDEN", "Bạn chỉ có quyền quản lý nhân viên thuộc chi nhánh của mình");
+        }
     }
 }

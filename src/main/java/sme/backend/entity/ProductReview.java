@@ -29,6 +29,11 @@ public class ProductReview extends BaseEntity {
     @Column(columnDefinition = "TEXT")
     private String comment;
 
+    @ElementCollection(fetch = FetchType.EAGER)
+    @CollectionTable(name = "product_review_images", joinColumns = @JoinColumn(name = "review_id"))
+    @Column(name = "image_url")
+    private java.util.List<String> imageUrls;
+
     @Column(name = "is_verified_purchase")
     @Builder.Default
     private Boolean isVerifiedPurchase = true;

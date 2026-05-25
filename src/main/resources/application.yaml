@@ -178,6 +178,20 @@ app:
     top-k-results: 5
 
 # ========================
+# PAYMENT GATEWAYS
+# ========================
+payos:
+  client-id: "b1f00f51-1a3e-4f76-8a3a-4e4792f7a10d"
+  api-key: "91decc1a-6f01-4a7a-91d2-40f98d581bbe"
+  checksum-key: "4823a880e9f9773f399226babb83718161c6402c6e3a9c88ef49db9529f3423d"
+
+vnpay:
+  tmn-code: "Q6OZXHS8"
+  hash-secret: "UCNLY2AYBOUTQO2EABG7E2G1K952T1WA"
+  pay-url: "https://sandbox.vnpayment.vn/paymentv2/vpcpay.html"
+  return-url: "http://localhost:8080/api/vnpay/vnpay-return"
+
+# ========================
 # LOGGING
 # ========================
 logging:

@@ -42,7 +42,7 @@ public interface InventoryRepository extends JpaRepository<Inventory, UUID> {
 
     @Query("""
             SELECT i FROM Inventory i
-            WHERE (CAST(:wid AS uuid) IS NULL OR i.warehouseId = CAST(:wid AS uuid))
+            WHERE (:wid IS NULL OR i.warehouseId = :wid)
             AND i.minQuantity > 0
             AND i.quantity > 0
             AND i.quantity <= i.minQuantity
@@ -58,7 +58,7 @@ public interface InventoryRepository extends JpaRepository<Inventory, UUID> {
             FROM Inventory i
             JOIN sme.backend.entity.Product p ON p.id = i.productId
             JOIN sme.backend.entity.Warehouse w ON w.id = i.warehouseId
-            WHERE (CAST(:wid AS uuid) IS NULL OR i.warehouseId = CAST(:wid AS uuid))
+            WHERE (:wid IS NULL OR i.warehouseId = :wid)
             AND i.minQuantity > 0
             AND i.quantity > 0
             AND i.quantity <= i.minQuantity
@@ -89,6 +89,9 @@ public interface InventoryRepository extends JpaRepository<Inventory, UUID> {
 
     @Query("SELECT i.productId, COALESCE(SUM(i.quantity - i.reservedQuantity), 0) FROM Inventory i WHERE i.productId IN :productIds GROUP BY i.productId")
     List<Object[]> getBulkTotalAvailableQuantity(@Param("productIds") List<UUID> productIds);
+
+    @Query("SELECT i.productId, COALESCE(SUM(i.quantity - i.reservedQuantity), 0) FROM Inventory i WHERE i.productId IN :productIds AND i.warehouseId = :warehouseId GROUP BY i.productId")
+    List<Object[]> getBulkAvailableQuantityByWarehouse(@Param("productIds") List<UUID> productIds, @Param("warehouseId") UUID warehouseId);
 
     @Query("""
                 SELECT new sme.backend.dto.response.InventoryResponse(

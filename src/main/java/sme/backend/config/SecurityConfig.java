@@ -73,14 +73,28 @@ public class SecurityConfig {
                         // Public endpoints
                         .requestMatchers("/auth/switch-branch").hasRole("ADMIN")
                         .requestMatchers("/auth/**").permitAll()
+                        .requestMatchers("/payments/**").permitAll()
                         .requestMatchers("/actuator/health").permitAll()
                         .requestMatchers("/api/ws/**", "/ws/**").permitAll() // WebSocket handshake
                         .requestMatchers(HttpMethod.GET, "/products/**", "/products").permitAll()
                         .requestMatchers(HttpMethod.GET, "/categories/**", "/categories").permitAll()
                         .requestMatchers(HttpMethod.GET, "/authors/**", "/authors").permitAll()
                         .requestMatchers(HttpMethod.GET, "/banners/**", "/banners").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/reviews/**", "/reviews").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/articles/**", "/articles").permitAll()
+                        .requestMatchers("/public/ai/**").permitAll()
 
                         .requestMatchers(HttpMethod.GET, "/orders/**").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/promotions/active").permitAll()
+                        .requestMatchers(HttpMethod.POST, "/promotions/validate").permitAll()
+
+                        // ── STOREFRONT (CUSTOMER) ──────────────────────────────
+                        // Customer cần tạo đơn hàng online
+                        .requestMatchers(HttpMethod.POST, "/orders")
+                        .hasAnyRole("CUSTOMER", "MANAGER", "ADMIN")
+                        // Customer cần truy cập thông tin cá nhân & lịch sử mua hàng
+                        .requestMatchers("/customers/me/**", "/customers/me")
+                        .hasRole("CUSTOMER")
 
                         // ── MODULE 0: POS ──────────────────────────────────────
                         .requestMatchers("/pos/**")
@@ -103,16 +117,15 @@ public class SecurityConfig {
                         // ── MODULE 4: E-COMMERCE & ORDERS ─────────────────────
                         .requestMatchers(HttpMethod.GET, "/orders/**")
                         .hasAnyRole("CASHIER", "MANAGER", "ADMIN")
-                        .requestMatchers(HttpMethod.PATCH, "/orders/**") // <-- THÊM DÒNG NÀY ĐỂ CHO PHÉP CASHIER CẬP
-                                                                         // NHẬT
-                        .hasAnyRole("CASHIER", "MANAGER", "ADMIN") // <-- THÊM DÒNG NÀY
+                        .requestMatchers(HttpMethod.PATCH, "/orders/**")
+                        .hasAnyRole("CASHIER", "MANAGER", "ADMIN")
                         .requestMatchers("/orders/**")
                         .hasAnyRole("MANAGER", "ADMIN")
 
                         // ── MODULE 5: CRM ──────────────────────────────────────
                         .requestMatchers(HttpMethod.GET, "/customers/**")
                         .hasAnyRole("CASHIER", "MANAGER", "ADMIN")
-                        .requestMatchers(HttpMethod.POST, "/customers") // <--- DÒNG MỚI ĐƯỢC THÊM
+                        .requestMatchers(HttpMethod.POST, "/customers")
                         .hasAnyRole("CASHIER", "MANAGER", "ADMIN")
                         // Các thao tác nhạy cảm khác như sửa, xóa (PUT, DELETE) thì chỉ Manager, Admin
                         // làm
@@ -143,6 +156,24 @@ public class SecurityConfig {
                         // ── NOTIFICATIONS ──────────────────────────────────────
                         .requestMatchers("/notifications/**")
                         .hasAnyRole("CASHIER", "MANAGER", "ADMIN")
+
+                        // ── MODULE REVIEWS ─────────────────────────────────────
+                        .requestMatchers(HttpMethod.POST, "/reviews")
+                        .hasRole("CUSTOMER")
+                        .requestMatchers("/reviews", "/reviews/**")
+                        .hasAnyRole("MANAGER", "ADMIN")
+
+                        // ── MODULE UPLOAD ──────────────────────────────────────
+                        .requestMatchers("/upload/**")
+                        .hasAnyRole("MANAGER", "ADMIN", "CUSTOMER")
+
+                        // ── MODULE AUTHORS ─────────────────────────────────────
+                        .requestMatchers("/authors", "/authors/**")
+                        .hasAnyRole("MANAGER", "ADMIN")
+
+                        // ── MODULE BANNERS ─────────────────────────────────────
+                        .requestMatchers("/banners", "/banners/**")
+                        .hasAnyRole("MANAGER", "ADMIN")
                         .requestMatchers(
                                 "/v3/api-docs/**",
                                 "/v3/api-docs.yaml",

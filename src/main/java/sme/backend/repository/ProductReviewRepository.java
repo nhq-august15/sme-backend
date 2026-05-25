@@ -24,4 +24,9 @@ public interface ProductReviewRepository extends JpaRepository<ProductReview, UU
     Double getAverageRatingByProductId(@Param("productId") UUID productId);
 
     Long countByProductIdAndIsApprovedTrue(UUID productId);
+
+    @Query("SELECT r FROM ProductReview r WHERE " +
+           "(:status IS NULL OR r.isApproved = :status) " +
+           "ORDER BY r.createdAt DESC")
+    Page<ProductReview> findAllForAdmin(@Param("status") Boolean status, Pageable pageable);
 }

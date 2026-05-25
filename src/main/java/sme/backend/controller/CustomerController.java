@@ -43,6 +43,8 @@ public class CustomerController {
     private final CustomerService customerService; 
     private final CustomerAddressService customerAddressService;
     private final WishlistService wishlistService;
+    private final sme.backend.repository.ProductRepository productRepository;
+    private final sme.backend.repository.ProductReviewRepository productReviewRepository;
 
     // =========================================================================
     // ENDPOINT DÀNH CHO KHÁCH HÀNG (STOREFRONT)
@@ -91,6 +93,14 @@ public class CustomerController {
             } else {
                 customer.setDateOfBirth(null);
             }
+        }
+        
+        if (body.containsKey("phoneNumber") && body.get("phoneNumber") != null) {
+            String newPhone = (String) body.get("phoneNumber");
+            if (!newPhone.equals(customer.getPhoneNumber()) && customerRepository.existsByPhoneNumber(newPhone)) {
+                throw new sme.backend.exception.BusinessException("DUPLICATE_PHONE", "Số điện thoại này đã được đăng ký bởi người khác");
+            }
+            customer.setPhoneNumber(newPhone);
         }
         
         return ResponseEntity.ok(ApiResponse.ok("Cập nhật thành công", customerRepository.save(customer)));
@@ -236,34 +246,76 @@ public class CustomerController {
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size) {
         
-        var pageable = PageRequest.of(page, size, Sort.by(Sort.Direction.DESC, "createdAt"));
+        PageRequest pageable = PageRequest.of(page, size, Sort.by(Sort.Direction.DESC, "createdAt"));
         
         Page<Invoice> invoices = invoiceRepository.findByCustomerIdOrderByCreatedAtDesc(id, pageable);
         Page<Order> orders = orderRepository.findByCustomerIdOrderByCreatedAtDesc(id, pageable);
 
-        var invoiceSummary = invoices.getContent().stream().map(inv -> Map.of(
-                "id", inv.getId(),
-                "code", inv.getCode(),
-                "type", inv.getType().name(),
-                "totalAmount", inv.getTotalAmount(),
-                "finalAmount", inv.getFinalAmount(),
-                "createdAt", inv.getCreatedAt()
-        )).toList();
+        List<Map<String, Object>> invoiceSummary = new java.util.ArrayList<>();
+        for (Invoice inv : invoices.getContent()) {
+            Map<String, Object> map = new java.util.HashMap<>();
+            map.put("id", inv.getId());
+            map.put("code", inv.getCode());
+            map.put("type", inv.getType().name());
+            map.put("totalAmount", inv.getTotalAmount());
+            map.put("finalAmount", inv.getFinalAmount());
+            map.put("createdAt", inv.getCreatedAt());
+            
+            List<Map<String, Object>> itemsList = new java.util.ArrayList<>();
+            for (sme.backend.entity.InvoiceItem item : inv.getItems()) {
+                String productName = productRepository.findById(item.getProductId())
+                        .map(sme.backend.entity.Product::getName)
+                        .orElse("Sản phẩm không xác định");
+                Map<String, Object> itemMap = new java.util.HashMap<>();
+                itemMap.put("productId", item.getProductId());
+                itemMap.put("productName", productName);
+                itemMap.put("quantity", item.getQuantity());
+                itemMap.put("unitPrice", item.getUnitPrice());
+                itemMap.put("subtotal", item.getSubtotal());
+                itemsList.add(itemMap);
+            }
+            map.put("items", itemsList);
+            invoiceSummary.add(map);
+        }
 
-        var orderSummary = orders.getContent().stream().map(ord -> Map.of(
-                "id", ord.getId(),
-                "code", ord.getCode(),
-                "type", "ONLINE",
-                "status", ord.getStatus().name(),
-                "totalAmount", ord.getTotalAmount(),
-                "finalAmount", ord.getFinalAmount(),
-                "createdAt", ord.getCreatedAt()
-        )).toList();
+        List<Map<String, Object>> orderSummary = new java.util.ArrayList<>();
+        for (Order ord : orders.getContent()) {
+            Map<String, Object> map = new java.util.HashMap<>();
+            map.put("id", ord.getId());
+            map.put("code", ord.getCode());
+            map.put("type", "ONLINE");
+            map.put("status", ord.getStatus().name());
+            map.put("totalAmount", ord.getTotalAmount());
+            map.put("finalAmount", ord.getFinalAmount());
+            map.put("paymentMethod", ord.getPaymentMethod() != null ? ord.getPaymentMethod() : "COD");
+            map.put("paymentStatus", ord.getPaymentStatus() != null ? ord.getPaymentStatus().name() : "UNPAID");
+            map.put("createdAt", ord.getCreatedAt());
+            
+            List<Map<String, Object>> itemsList = new java.util.ArrayList<>();
+            for (sme.backend.entity.OrderItem item : ord.getItems()) {
+                String productName = productRepository.findById(item.getProductId())
+                        .map(sme.backend.entity.Product::getName)
+                        .orElse("Sản phẩm không xác định");
+                boolean isRev = productReviewRepository.existsByProductIdAndCustomerIdAndOrderId(
+                        item.getProductId(), id, ord.getId());
+                Map<String, Object> itemMap = new java.util.HashMap<>();
+                itemMap.put("productId", item.getProductId());
+                itemMap.put("productName", productName);
+                itemMap.put("quantity", item.getQuantity());
+                itemMap.put("unitPrice", item.getUnitPrice());
+                itemMap.put("subtotal", item.getSubtotal());
+                itemMap.put("isReviewed", isRev);
+                itemsList.add(itemMap);
+            }
+            map.put("items", itemsList);
+            orderSummary.add(map);
+        }
 
-        return ResponseEntity.ok(ApiResponse.ok(Map.of(
-            "invoices", invoiceSummary,
-            "orders", orderSummary
-        )));
+        Map<String, Object> responseData = new java.util.HashMap<>();
+        responseData.put("invoices", invoiceSummary);
+        responseData.put("orders", orderSummary);
+
+        return ResponseEntity.ok(ApiResponse.ok(responseData));
     }
 
     /** POST /customers — Tạo khách hàng mới */

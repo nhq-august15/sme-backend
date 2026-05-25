@@ -28,32 +28,33 @@ public class HomeBannerController {
     }
 
     @PostMapping
-    @PreAuthorize("hasAnyRole('MANAGER','ADMIN')")
+    @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<ApiResponse<HomeBanner>> create(@Valid @RequestBody CreateBannerRequest req) {
         return ResponseEntity.status(HttpStatus.CREATED).body(ApiResponse.created(homeBannerService.createBanner(req)));
     }
 
     @PutMapping("/{id}")
-    @PreAuthorize("hasAnyRole('MANAGER','ADMIN')")
-    public ResponseEntity<ApiResponse<HomeBanner>> update(@PathVariable UUID id, @Valid @RequestBody CreateBannerRequest req) {
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<ApiResponse<HomeBanner>> update(@PathVariable UUID id,
+            @Valid @RequestBody CreateBannerRequest req) {
         return ResponseEntity.ok(ApiResponse.ok(homeBannerService.updateBanner(id, req)));
     }
 
     @PatchMapping("/{id}/toggle-active")
-    @PreAuthorize("hasAnyRole('MANAGER','ADMIN')")
+    @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<ApiResponse<HomeBanner>> toggleActive(@PathVariable UUID id) {
         return ResponseEntity.ok(ApiResponse.ok(homeBannerService.toggleActive(id)));
     }
 
     @DeleteMapping("/{id}")
-    @PreAuthorize("hasAnyRole('MANAGER','ADMIN')")
+    @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<ApiResponse<Void>> delete(@PathVariable UUID id) {
         homeBannerService.deleteBanner(id);
         return ResponseEntity.ok(ApiResponse.ok("Xóa banner thành công", null));
     }
 
     @PutMapping("/reorder")
-    @PreAuthorize("hasAnyRole('MANAGER','ADMIN')")
+    @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<ApiResponse<Void>> reorder(@RequestBody List<UUID> orderedIds) {
         homeBannerService.reorderBanners(orderedIds);
         return ResponseEntity.ok(ApiResponse.ok("Sắp xếp thành công", null));

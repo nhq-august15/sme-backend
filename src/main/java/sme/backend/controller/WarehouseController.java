@@ -59,9 +59,25 @@ public class WarehouseController {
         public ResponseEntity<ApiResponse<WarehouseResponse>> create(
                         @RequestBody Map<String, String> body) {
                 String code = body.get("code");
-                if (warehouseRepository.existsByCode(code)) {
-                        throw new BusinessException("DUPLICATE_CODE",
-                                        "Mã chi nhánh '" + code + "' đã tồn tại");
+                if (code == null || code.trim().isEmpty()) {
+                        long count = warehouseRepository.count() + 1;
+                        code = "CN" + String.format("%03d", count);
+                        while (warehouseRepository.existsByCode(code)) {
+                                count++;
+                                code = "CN" + String.format("%03d", count);
+                        }
+                } else {
+                        if (warehouseRepository.existsByCode(code)) {
+                                throw new BusinessException("DUPLICATE_CODE",
+                                                "Mã chi nhánh '" + code + "' đã tồn tại");
+                        }
+                }
+                String typeStr = body.get("warehouseType");
+                Warehouse.WarehouseType type = Warehouse.WarehouseType.BRANCH;
+                if (typeStr != null) {
+                        try {
+                                type = Warehouse.WarehouseType.valueOf(typeStr);
+                        } catch (Exception ignored) {}
                 }
                 Warehouse warehouse = Warehouse.builder()
                                 .code(code)
@@ -69,6 +85,7 @@ public class WarehouseController {
                                 .provinceCode(body.getOrDefault("provinceCode", "00"))
                                 .address(body.get("address"))
                                 .phone(body.get("phone"))
+                                .warehouseType(type)
                                 .isActive(true)
                                 .build();
                 return ResponseEntity.status(HttpStatus.CREATED)
@@ -92,6 +109,8 @@ public class WarehouseController {
                         w.setAddress(request.getAddress());
                 if (request.getPhone() != null)
                         w.setPhone(request.getPhone());
+                if (request.getWarehouseType() != null)
+                        w.setWarehouseType(request.getWarehouseType());
 
                 if (request.getHasManagerId() != null && request.getHasManagerId()) {
                         w.setManagerId(request.getManagerId());

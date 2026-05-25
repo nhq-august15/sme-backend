@@ -99,6 +99,10 @@ public class Product extends BaseEntity {
     @Builder.Default
     private Integer totalReviews = 0;
 
+    @Column(name = "sold_quantity")
+    @Builder.Default
+    private Integer soldQuantity = 0;
+
     public void recalculateMAC(int currentQty, int importQty, BigDecimal importPrice) {
         if (importQty <= 0)
             return;

@@ -14,6 +14,8 @@ import sme.backend.repository.*;
 import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
+import sme.backend.security.UserPrincipal;
+import sme.backend.entity.User;
 
 @Service
 @RequiredArgsConstructor
@@ -282,6 +284,21 @@ public class TransferService {
     public InternalTransfer getById(UUID id) {
         return transferRepository.findByIdWithItems(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Transfer", id));
+    }
+
+    @Transactional(readOnly = true)
+    public List<InternalTransfer> getTransfersByOrderId(UUID orderId, UserPrincipal currentUser) {
+        List<InternalTransfer> transfers = transferRepository.findByReferenceOrderId(orderId);
+        
+        if (currentUser.getRole() == User.UserRole.ROLE_ADMIN) {
+            return transfers;
+        }
+        
+        UUID userWarehouseId = currentUser.getWarehouseId();
+        return transfers.stream()
+                .filter(t -> (t.getFromWarehouseId() != null && t.getFromWarehouseId().equals(userWarehouseId)) ||
+                             (t.getToWarehouseId() != null && t.getToWarehouseId().equals(userWarehouseId)))
+                .toList();
     }
 
     public record TransferItemRequest(UUID productId, int quantity) {}

@@ -265,4 +265,23 @@ public interface InvoiceRepository extends JpaRepository<Invoice, UUID> {
             """, nativeQuery = true)
     List<Map<String, Object>> getRevenueReportYearly(@Param("wid") UUID warehouseId, @Param("from") Instant from,
             @Param("to") Instant to, @Param("pm") String paymentMethod);
+
+    @Query(value = """
+            SELECT
+                COUNT(i.id) AS totalCount,
+                CAST(0 AS bigint) AS pendingCount,
+                CAST(COALESCE(SUM(CASE WHEN i.type = 'SALE' THEN 1 ELSE 0 END), 0) AS bigint) AS paidCount,
+                COALESCE(SUM(CASE WHEN i.type = 'SALE' THEN i.final_amount
+                                  WHEN i.type = 'RETURN' THEN -i.final_amount
+                                  ELSE 0 END), 0) AS totalRevenue
+            FROM invoices i
+            WHERE (CAST(:warehouseId AS UUID) IS NULL OR i.warehouse_id = CAST(:warehouseId AS UUID))
+              AND (CAST(:type AS VARCHAR) IS NULL OR i.type = CAST(:type AS VARCHAR))
+              AND (CAST(:keyword AS VARCHAR) IS NULL
+                   OR LOWER(i.code) LIKE LOWER(CONCAT('%', CAST(:keyword AS VARCHAR), '%'))
+                   OR (LOWER(CAST(:keyword AS VARCHAR)) = 'khách lẻ' AND i.customer_id IS NULL))
+            """, nativeQuery = true)
+    Map<String, Object> getInvoiceStats(@Param("warehouseId") UUID warehouseId,
+                                        @Param("type") String type,
+                                        @Param("keyword") String keyword);
 }

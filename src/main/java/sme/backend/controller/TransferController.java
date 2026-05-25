@@ -81,8 +81,12 @@ public class TransferController {
             @RequestParam(defaultValue = "20") int size,
             @RequestParam(required = false) UUID warehouseId) {
         
-        UUID wid = (principal.getRole() == User.UserRole.ROLE_ADMIN) && warehouseId != null 
-                ? warehouseId : principal.getWarehouseId();
+        UUID wid;
+        if (principal.getRole() == User.UserRole.ROLE_ADMIN) {
+            wid = warehouseId;
+        } else {
+            wid = principal.getWarehouseId();
+        }
         
         return ResponseEntity.ok(ApiResponse.ok(PageResponse.of(
                 transferService.searchTransfers(wid, status, keyword, PageRequest.of(page, size)))));
@@ -92,6 +96,14 @@ public class TransferController {
     @PreAuthorize("hasAnyRole('MANAGER','ADMIN')")
     public ResponseEntity<ApiResponse<InternalTransfer>> getOne(@PathVariable UUID id) {
         return ResponseEntity.ok(ApiResponse.ok(transferService.getById(id)));
+    }
+
+    @GetMapping("/order/{orderId}")
+    @PreAuthorize("hasAnyRole('MANAGER','ADMIN','CASHIER')")
+    public ResponseEntity<ApiResponse<List<InternalTransfer>>> getByOrderId(
+            @PathVariable UUID orderId,
+            @AuthenticationPrincipal UserPrincipal principal) {
+        return ResponseEntity.ok(ApiResponse.ok(transferService.getTransfersByOrderId(orderId, principal)));
     }
 
     @PostMapping("/{id}/dispatch")

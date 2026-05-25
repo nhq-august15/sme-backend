@@ -81,6 +81,31 @@ public class OrderController {
                 PageResponse.of(orderService.getOrders(wid, orderStatus, orderType, keyword, pageable))));
     }
 
+    @GetMapping("/stats")
+    @PreAuthorize("hasAnyRole('CASHIER','MANAGER','ADMIN')")
+    public ResponseEntity<ApiResponse<Map<String, Object>>> getOrderStats(
+            @AuthenticationPrincipal UserPrincipal principal,
+            @RequestParam(required = false) String status,
+            @RequestParam(required = false) String type,
+            @RequestParam(required = false) String keyword,
+            @RequestParam(required = false) UUID warehouseId,
+            @RequestParam(required = false) String source) {
+
+        UUID wid = (principal.getRole() == User.UserRole.ROLE_ADMIN) && warehouseId != null ? warehouseId : principal.getWarehouseId();
+
+        Order.OrderStatus orderStatus = null;
+        if (status != null && !status.isBlank() && !status.equals("ALL")) {
+            try { orderStatus = Order.OrderStatus.valueOf(status.toUpperCase()); } catch (IllegalArgumentException ignored) {}
+        }
+
+        Order.OrderType orderType = null;
+        if (type != null && !type.isBlank() && !type.equals("ALL")) {
+            try { orderType = Order.OrderType.valueOf(type.toUpperCase()); } catch (IllegalArgumentException ignored) {}
+        }
+
+        return ResponseEntity.ok(ApiResponse.ok(orderService.getOrderStats(wid, orderStatus, orderType, keyword, source)));
+    }
+
     @GetMapping("/pending")
     @PreAuthorize("hasAnyRole('MANAGER','ADMIN')")
     public ResponseEntity<ApiResponse<List<OrderResponse>>> getPendingOrders(
@@ -116,5 +141,21 @@ public class OrderController {
 
         OrderResponse updated = orderService.updateStatus(id, newStatus, note, trackingCode, shippingProvider, principal.getId().toString());
         return ResponseEntity.ok(ApiResponse.ok("Cập nhật trạng thái thành công", updated));
+    }
+
+    @PatchMapping("/{id}/assign-warehouse")
+    @PreAuthorize("hasAnyRole('MANAGER','ADMIN')")
+    public ResponseEntity<ApiResponse<OrderResponse>> assignWarehouse(
+            @PathVariable UUID id,
+            @RequestBody Map<String, String> body,
+            @AuthenticationPrincipal UserPrincipal principal) {
+        String warehouseIdStr = body.get("warehouseId");
+        String reason = body.get("reason");
+        if (warehouseIdStr == null || warehouseIdStr.isBlank()) {
+            throw new BusinessException("INVALID_DATA", "Thiếu warehouseId");
+        }
+        UUID warehouseId = UUID.fromString(warehouseIdStr);
+        OrderResponse updated = orderService.assignWarehouse(id, warehouseId, reason, principal.getId().toString());
+        return ResponseEntity.ok(ApiResponse.ok("Chuyển kho thành công", updated));
     }
 }

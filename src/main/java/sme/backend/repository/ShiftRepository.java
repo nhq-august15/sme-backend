@@ -30,6 +30,29 @@ public interface ShiftRepository extends JpaRepository<Shift, UUID> {
     // Ca chờ Manager duyệt (toàn hệ thống - dùng cho Admin khi warehouseId = null)
     List<Shift> findByStatus(Shift.ShiftStatus status);
 
+    @Query("""
+            SELECT s FROM Shift s
+            WHERE (:warehouseId IS NULL OR s.warehouseId = :warehouseId)
+            AND s.cashierId IN (
+                SELECT u.id FROM User u
+                WHERE u.role NOT IN (sme.backend.entity.User.UserRole.ROLE_ADMIN, sme.backend.entity.User.UserRole.ROLE_CUSTOMER)
+            )
+            ORDER BY s.openedAt DESC
+            """)
+    Page<Shift> searchShiftsExcludeAdminAndCustomer(@Param("warehouseId") UUID warehouseId, Pageable pageable);
+
+    @Query("""
+            SELECT s FROM Shift s
+            WHERE s.status = :status
+            AND (:warehouseId IS NULL OR s.warehouseId = :warehouseId)
+            AND s.cashierId IN (
+                SELECT u.id FROM User u
+                WHERE u.role NOT IN (sme.backend.entity.User.UserRole.ROLE_ADMIN, sme.backend.entity.User.UserRole.ROLE_CUSTOMER)
+            )
+            ORDER BY s.openedAt DESC
+            """)
+    List<Shift> findPendingShiftsExcludeAdminAndCustomer(@Param("warehouseId") UUID warehouseId, @Param("status") Shift.ShiftStatus status);
+
     // Lấy ca gần nhất đã approved của cashier để tính theoretical cash tiếp theo
     @Query("""
             SELECT s FROM Shift s

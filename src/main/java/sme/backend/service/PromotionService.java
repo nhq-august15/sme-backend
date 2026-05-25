@@ -159,10 +159,6 @@ public class PromotionService {
                 .stream().map(this::toResponse).collect(Collectors.toList());
     }
 
-    /**
-     * Validate và tính discount cho nhiều mã khuyến mãi (Thủ công) + Tự động quét mã AUTO.
-     * Áp dụng quy tắc Slot-based: Tối đa 1 mã cho ORDER, 1 mã cho SHIPPING.
-     */
     @Transactional(readOnly = true)
     public BigDecimal applyPromotions(List<String> codes, BigDecimal orderTotal, String channel) {
         BigDecimal totalDiscount = BigDecimal.ZERO;

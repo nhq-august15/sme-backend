@@ -17,5 +17,7 @@ public class ProductReviewResponse {
     private Integer rating;
     private String comment;
     private Boolean isVerifiedPurchase;
+    private Boolean isApproved;
     private Instant createdAt;
+    private java.util.List<String> imageUrls;
 }

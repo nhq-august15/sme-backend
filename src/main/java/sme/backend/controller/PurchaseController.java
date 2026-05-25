@@ -63,7 +63,12 @@ public class PurchaseController {
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size) {
         
-        UUID wid = (principal.getRole() == User.UserRole.ROLE_ADMIN) && warehouseId != null ? warehouseId : principal.getWarehouseId();
+        UUID wid;
+        if (principal.getRole() == User.UserRole.ROLE_ADMIN) {
+            wid = warehouseId;
+        } else {
+            wid = principal.getWarehouseId();
+        }
 
         PurchaseOrder.PurchaseStatus poStatus = null;
         if (status != null && !status.isBlank() && !status.equals("ALL")) {

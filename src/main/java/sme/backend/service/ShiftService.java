@@ -12,6 +12,8 @@ import sme.backend.exception.BusinessException;
 import sme.backend.exception.ResourceNotFoundException;
 import sme.backend.repository.InvoiceRepository;
 import sme.backend.repository.ShiftRepository;
+import sme.backend.repository.UserRepository;
+import sme.backend.repository.WarehouseRepository;
 
 import java.math.BigDecimal;
 import java.util.List;
@@ -25,6 +27,8 @@ public class ShiftService {
     private final ShiftRepository shiftRepository;
     private final InvoiceRepository invoiceRepository;
     private final NotificationService notificationService;
+    private final UserRepository userRepository;
+    private final WarehouseRepository warehouseRepository;
 
     // ─────────────────────────────────────────────────────────
     // MỞ CA (POS-01)
@@ -54,11 +58,20 @@ public class ShiftService {
     // Cashier KHÔNG biết số tiền lý thuyết khi đóng ca
     // ─────────────────────────────────────────────────────────
     @Transactional
-    public ShiftResponse closeShift(UUID cashierId, CloseShiftRequest req) {
-        Shift shift = shiftRepository
-                .findByCashierIdAndStatus(cashierId, Shift.ShiftStatus.OPEN)
-                .orElseThrow(() -> new BusinessException("NO_OPEN_SHIFT",
-                        "Không tìm thấy ca làm việc đang mở cho thu ngân này"));
+    public ShiftResponse closeShift(sme.backend.security.UserPrincipal principal, CloseShiftRequest req) {
+        Shift shift;
+        if (req.getShiftId() != null && principal.getRole() == sme.backend.entity.User.UserRole.ROLE_ADMIN) {
+            shift = shiftRepository.findById(req.getShiftId())
+                    .orElseThrow(() -> new BusinessException("SHIFT_NOT_FOUND", "Không tìm thấy ca làm việc này"));
+            if (shift.getStatus() != Shift.ShiftStatus.OPEN) {
+                throw new BusinessException("SHIFT_NOT_OPEN", "Ca làm việc không ở trạng thái OPEN");
+            }
+        } else {
+            shift = shiftRepository
+                    .findByCashierIdAndStatus(principal.getId(), Shift.ShiftStatus.OPEN)
+                    .orElseThrow(() -> new BusinessException("NO_OPEN_SHIFT",
+                            "Không tìm thấy ca làm việc đang mở cho thu ngân này"));
+        }
 
         // Tính tiền lý thuyết: Đầu ca + Tiền mặt thu vào - Tiền mặt chi ra
         BigDecimal cashIn  = shiftRepository.sumCashInByShift(shift.getId());
@@ -103,21 +116,13 @@ public class ShiftService {
 
     @Transactional(readOnly = true)
     public List<ShiftResponse> getPendingShifts(UUID warehouseId) {
-        List<Shift> shifts;
-        if (warehouseId != null) {
-            shifts = shiftRepository.findByWarehouseIdAndStatus(warehouseId, Shift.ShiftStatus.CLOSED);
-        } else {
-            shifts = shiftRepository.findByStatus(Shift.ShiftStatus.CLOSED);
-        }
+        List<Shift> shifts = shiftRepository.findPendingShiftsExcludeAdminAndCustomer(warehouseId, Shift.ShiftStatus.CLOSED);
         return shifts.stream().map(this::mapToResponse).toList();
     }
 
     @Transactional(readOnly = true)
     public org.springframework.data.domain.Page<ShiftResponse> searchShifts(UUID warehouseId, org.springframework.data.domain.Pageable pageable) {
-        if (warehouseId != null) {
-            return shiftRepository.findByWarehouseIdOrderByOpenedAtDesc(warehouseId, pageable).map(this::mapToResponse);
-        }
-        return shiftRepository.findAll(pageable).map(this::mapToResponse);
+        return shiftRepository.searchShiftsExcludeAdminAndCustomer(warehouseId, pageable).map(this::mapToResponse);
     }
 
     @Transactional(readOnly = true)
@@ -137,10 +142,26 @@ public class ShiftService {
             catch (Exception ignored) {}
         }
         if (revenue == null) revenue = BigDecimal.ZERO;
+        // Lookup names
+        String cashierName = null;
+        String warehouseName = null;
+        try {
+            cashierName = userRepository.findById(shift.getCashierId())
+                    .map(u -> u.getFullName() != null ? u.getFullName() : u.getUsername())
+                    .orElse(null);
+        } catch (Exception ignored) {}
+        try {
+            warehouseName = warehouseRepository.findById(shift.getWarehouseId())
+                    .map(w -> w.getName())
+                    .orElse(null);
+        } catch (Exception ignored) {}
+
         return ShiftResponse.builder()
                 .id(shift.getId())
                 .warehouseId(shift.getWarehouseId())
+                .warehouseName(warehouseName)
                 .cashierId(shift.getCashierId())
+                .cashierName(cashierName)
                 .startingCash(shift.getStartingCash())
                 .reportedCash(shift.getReportedCash())
                 .theoreticalCash(shift.getTheoreticalCash())

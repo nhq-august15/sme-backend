@@ -41,14 +41,37 @@ public class ProductController {
             @RequestParam(required = false) String keyword,
             @RequestParam(required = false) UUID categoryId,
             @RequestParam(required = false) UUID supplierId, // ĐÃ THÊM MỚI
+            @RequestParam(required = false) UUID warehouseId,
             @RequestParam(required = false) Boolean isActive, 
             @RequestParam(required = false) Double minPrice,
             @RequestParam(required = false) Double maxPrice,
+            @RequestParam(required = false) String sortBy,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size) {
-        var pageable = PageRequest.of(page, size, Sort.by("name"));
+        
+        Sort sort = Sort.by("name");
+        if (sortBy != null && !sortBy.trim().isEmpty()) {
+            switch (sortBy) {
+                case "soldDesc":
+                    sort = Sort.by(Sort.Order.desc("soldQuantity").nullsLast());
+                    break;
+                case "newest":
+                    sort = Sort.by(Sort.Order.desc("createdAt").nullsLast());
+                    break;
+                case "priceAsc":
+                    sort = Sort.by(Sort.Order.asc("retailPrice").nullsLast());
+                    break;
+                case "priceDesc":
+                    sort = Sort.by(Sort.Order.desc("retailPrice").nullsLast());
+                    break;
+                default:
+                    sort = Sort.by("name");
+            }
+        }
+        
+        var pageable = PageRequest.of(page, size, sort);
         return ResponseEntity.ok(ApiResponse.ok(
-                PageResponse.of(productService.search(keyword, categoryId, supplierId, isActive, minPrice, maxPrice, pageable))));
+                PageResponse.of(productService.search(keyword, categoryId, supplierId, warehouseId, isActive, minPrice, maxPrice, pageable))));
     }
 
     @GetMapping("/export")
@@ -56,12 +79,13 @@ public class ProductController {
             @RequestParam(required = false) String keyword,
             @RequestParam(required = false) UUID categoryId,
             @RequestParam(required = false) UUID supplierId,
+            @RequestParam(required = false) UUID warehouseId,
             @RequestParam(required = false) Boolean isActive,
             @RequestParam(required = false) Double minPrice,
             @RequestParam(required = false) Double maxPrice) throws IOException {
         
         var pageable = PageRequest.of(0, 5000, Sort.by("name"));
-        List<ProductResponse> products = productService.search(keyword, categoryId, supplierId, isActive, minPrice, maxPrice, pageable).getContent();
+        List<ProductResponse> products = productService.search(keyword, categoryId, supplierId, warehouseId, isActive, minPrice, maxPrice, pageable).getContent();
         
         byte[] excelBytes = excelExportService.exportProductsToExcel(products);
 

@@ -40,4 +40,5 @@ public class ProductResponse {
     private UUID authorId;
     private Double averageRating;
     private Integer totalReviews;
+    private Integer soldQuantity;
 }

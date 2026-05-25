@@ -111,17 +111,29 @@ public class ProductService {
         }
         if (req.getSku() != null) product.setSku(req.getSku());
         if (req.getDescription() != null) product.setDescription(req.getDescription());
-        if (req.getRetailPrice() != null) product.setRetailPrice(req.getRetailPrice());
-        if (req.getWholesalePrice() != null) product.setWholesalePrice(req.getWholesalePrice());
+
+        boolean isManager = org.springframework.security.core.context.SecurityContextHolder.getContext().getAuthentication().getAuthorities().stream().anyMatch(a -> a.getAuthority().equals("ROLE_MANAGER"));
+
+        if (!isManager) {
+            if (req.getRetailPrice() != null) product.setRetailPrice(req.getRetailPrice());
+            if (req.getWholesalePrice() != null) product.setWholesalePrice(req.getWholesalePrice());
+            if (req.getCoverPrice() != null) product.setCoverPrice(req.getCoverPrice());
+        }
+
         if (req.getCategoryId() != null) product.setCategoryId(req.getCategoryId());
-        if (req.getIsActive() != null) product.setIsActive(req.getIsActive());
+        if (req.getIsActive() != null) {
+            if (isManager && Boolean.TRUE.equals(product.getIsActive()) && Boolean.FALSE.equals(req.getIsActive())) {
+                // Ignore (Task 4: MANAGER cannot stop selling a product)
+            } else {
+                product.setIsActive(req.getIsActive());
+            }
+        }
         if (req.getUnit() != null) product.setUnit(req.getUnit());
         if (req.getWeight() != null) product.setWeight(req.getWeight());
         if (req.getHasSupplierId() != null && req.getHasSupplierId()) {
             product.setSupplierId(req.getSupplierId());
         }
 
-        if (req.getCoverPrice() != null) product.setCoverPrice(req.getCoverPrice());
         if (req.getSlug() != null) product.setSlug(req.getSlug());
         if (req.getPublisher() != null) product.setPublisher(req.getPublisher());
         if (req.getPublishYear() != null) product.setPublishYear(req.getPublishYear());
@@ -254,7 +266,7 @@ public class ProductService {
     }
 
     @Transactional(readOnly = true)
-    public Page<ProductResponse> search(String keyword, UUID categoryId, UUID supplierId,
+    public Page<ProductResponse> search(String keyword, UUID categoryId, UUID supplierId, UUID warehouseId,
                                          Boolean isActive, Double minPrice, Double maxPrice, Pageable pageable) {
         Page<Product> productPage = productRepository.searchProducts(keyword, categoryId, supplierId, isActive, minPrice, maxPrice, pageable);
         if (productPage.isEmpty()) return productPage.map(p -> mapToResponse(p, 0));
@@ -265,7 +277,12 @@ public class ProductService {
                 .collect(Collectors.toMap(Category::getId, Category::getName));
 
         List<UUID> productIds = productPage.getContent().stream().map(Product::getId).toList();
-        List<Object[]> bulkInventory = inventoryRepository.getBulkTotalAvailableQuantity(productIds);
+        List<Object[]> bulkInventory;
+        if (warehouseId != null) {
+            bulkInventory = inventoryRepository.getBulkAvailableQuantityByWarehouse(productIds, warehouseId);
+        } else {
+            bulkInventory = inventoryRepository.getBulkTotalAvailableQuantity(productIds);
+        }
         Map<UUID, Integer> inventoryMap = bulkInventory.stream()
                 .collect(Collectors.toMap(row -> (UUID) row[0], row -> ((Number) row[1]).intValue()));
 
@@ -323,6 +340,7 @@ public class ProductService {
                 .authorId(p.getAuthorId())
                 .averageRating(p.getAverageRating())
                 .totalReviews(p.getTotalReviews())
+                .soldQuantity(p.getSoldQuantity())
                 .build();
     }
 

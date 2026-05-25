@@ -21,4 +21,6 @@ public class CreateReviewRequest {
     private Integer rating;
 
     private String comment;
+
+    private java.util.List<String> imageUrls;
 }

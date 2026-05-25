@@ -28,27 +28,27 @@ public class PromotionController {
     private final PromotionService promotionService;
 
     @PostMapping
-    @PreAuthorize("hasAnyRole('MANAGER','ADMIN')")
+    @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<ApiResponse<PromotionResponse>> create(@Valid @RequestBody CreatePromotionRequest req) {
         return ResponseEntity.ok(ApiResponse.ok("Tạo khuyến mãi thành công", promotionService.create(req)));
     }
 
     @PutMapping("/{id}")
-    @PreAuthorize("hasAnyRole('MANAGER','ADMIN')")
+    @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<ApiResponse<PromotionResponse>> update(
             @PathVariable UUID id, @Valid @RequestBody CreatePromotionRequest req) {
         return ResponseEntity.ok(ApiResponse.ok("Cập nhật thành công", promotionService.update(id, req)));
     }
 
     @PatchMapping("/{id}/toggle")
-    @PreAuthorize("hasAnyRole('MANAGER','ADMIN')")
+    @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<ApiResponse<String>> toggle(@PathVariable UUID id) {
         promotionService.toggleActive(id);
         return ResponseEntity.ok(ApiResponse.ok("Đã thay đổi trạng thái", null));
     }
 
     @DeleteMapping("/{id}")
-    @PreAuthorize("hasAnyRole('MANAGER','ADMIN')")
+    @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<ApiResponse<String>> delete(@PathVariable UUID id) {
         promotionService.delete(id);
         return ResponseEntity.ok(ApiResponse.ok("Đã xóa khuyến mãi", null));
@@ -71,13 +71,11 @@ public class PromotionController {
     }
 
     @GetMapping("/active")
-    @PreAuthorize("hasAnyRole('MANAGER','ADMIN','CASHIER')")
     public ResponseEntity<ApiResponse<List<PromotionResponse>>> getActive() {
         return ResponseEntity.ok(ApiResponse.ok(promotionService.getActivePromotions()));
     }
 
     @PostMapping("/validate")
-    @PreAuthorize("hasAnyRole('MANAGER','ADMIN','CASHIER')")
     public ResponseEntity<ApiResponse<Map<String, Object>>> validate(@RequestBody Map<String, Object> body) {
         log.info("[Controller] Promotion validate request body: {}", body);
         if (body == null || body.isEmpty()) {

@@ -12,4 +12,6 @@ public class CloseShiftRequest {
     private BigDecimal reportedCash;
 
     private String discrepancyReason;
+
+    private java.util.UUID shiftId;
 }

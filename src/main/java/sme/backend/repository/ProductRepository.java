@@ -85,7 +85,7 @@ public interface ProductRepository extends JpaRepository<Product, UUID> {
             
     @Query("""
             SELECT p FROM Product p
-            WHERE (:categoryId IS NULL OR p.categoryId = :categoryId)
+            WHERE (:categoryId IS NULL OR p.categoryId IN (SELECT c.id FROM Category c WHERE c.id = :categoryId OR c.parentId = :categoryId))
             AND (:supplierId IS NULL OR p.supplierId = :supplierId)
             AND (:isActive IS NULL OR p.isActive = :isActive)
             AND (:minPrice IS NULL OR p.retailPrice >= :minPrice)
@@ -94,7 +94,6 @@ public interface ProductRepository extends JpaRepository<Product, UUID> {
             OR LOWER(p.name) LIKE LOWER(CONCAT('%', :keyword, '%'))
             OR p.isbnBarcode LIKE CONCAT('%', :keyword, '%')
             OR p.sku LIKE CONCAT('%', :keyword, '%'))
-            ORDER BY p.name
             """)
     Page<Product> searchProducts(@Param("keyword") String keyword, 
                                  @Param("categoryId") UUID categoryId, 

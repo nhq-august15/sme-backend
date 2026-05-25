@@ -18,7 +18,7 @@ public class UploadController {
     private final FileUploadService fileUploadService;
 
     @PostMapping("/image")
-    @PreAuthorize("hasAnyRole('MANAGER','ADMIN')")
+    @PreAuthorize("hasAnyRole('MANAGER','ADMIN','CUSTOMER')")
     public ResponseEntity<ApiResponse<Map<String, String>>> uploadImage(@RequestParam("file") MultipartFile file) {
         String imageUrl = fileUploadService.uploadImage(file);
         return ResponseEntity.ok(ApiResponse.ok(Map.of("url", imageUrl)));

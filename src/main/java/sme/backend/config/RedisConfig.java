@@ -22,7 +22,6 @@
         // ĐÃ MỞ LẠI 2 DÒNG NÀY ĐỂ KÍCH HOẠT REDIS CACHE [cite: 1373]
         @Configuration
         @EnableCaching
-        @Profile("!local")
         public class RedisConfig {
 
         @Bean

@@ -23,9 +23,10 @@ public class CreateOrderRequest {
     @NotBlank private String paymentMethod;
     private String type;     // DELIVERY (default) | BOPIS
     private String note;
-    
-    // Thêm shippingFee
+    // Thêm shippingFee và discount
     private BigDecimal shippingFee;
+    private BigDecimal discountAmount;
+    private List<String> couponCodes;
 
     // KHÔNG CÓ assignedWarehouseId (hệ thống tự phân luồng)
 

@@ -22,7 +22,14 @@ import sme.backend.security.UserPrincipal;
 import sme.backend.service.POSService;
 import sme.backend.service.ShiftService;
 import sme.backend.service.PdfService;
+import sme.backend.service.PayosService;
+import sme.backend.service.VnPayService;
 import sme.backend.repository.CustomerRepository;
+import sme.backend.config.AppProperties;
+import sme.backend.dto.request.PosCheckoutDraft;
+import org.springframework.data.redis.core.RedisTemplate;
+
+import java.math.BigDecimal;
 
 import java.time.Instant;
 import java.util.List;
@@ -37,12 +44,15 @@ public class POSController {
     private final ShiftService shiftService;
     private final POSService posService;
     private final InvoiceRepository invoiceRepository;
-    private final CustomerRepository customerRepository;
     private final WarehouseRepository warehouseRepository;
     private final PdfService pdfService;
+    private final PayosService payosService;
+    private final VnPayService vnPayService;
+    private final AppProperties appProperties;
+    private final RedisTemplate<String, Object> redisTemplate;
 
     @PostMapping("/shifts/open")
-    @PreAuthorize("hasAnyRole('CASHIER','MANAGER','ADMIN')")
+    @PreAuthorize("hasAnyRole('CASHIER','MANAGER')")
     public ResponseEntity<ApiResponse<ShiftResponse>> openShift(
             @AuthenticationPrincipal UserPrincipal principal,
             @Valid @RequestBody OpenShiftRequest req) {
@@ -62,16 +72,16 @@ public class POSController {
     }
 
     @PostMapping("/shifts/close")
-    @PreAuthorize("hasAnyRole('CASHIER','MANAGER','ADMIN')")
+    @PreAuthorize("hasAnyRole('CASHIER','MANAGER')")
     public ResponseEntity<ApiResponse<ShiftResponse>> closeShift(
             @AuthenticationPrincipal UserPrincipal principal,
             @Valid @RequestBody CloseShiftRequest req) {
-        ShiftResponse shift = shiftService.closeShift(principal.getId(), req);
+        ShiftResponse shift = shiftService.closeShift(principal, req);
         return ResponseEntity.ok(ApiResponse.ok("Đóng ca thành công", shift));
     }
 
     @GetMapping("/shifts/current")
-    @PreAuthorize("hasAnyRole('CASHIER','MANAGER','ADMIN')")
+    @PreAuthorize("hasAnyRole('CASHIER','MANAGER')")
     public ResponseEntity<ApiResponse<ShiftResponse>> getCurrentShift(
             @AuthenticationPrincipal UserPrincipal principal) {
         try {
@@ -133,7 +143,7 @@ public class POSController {
     }
 
     @PostMapping("/checkout")
-    @PreAuthorize("hasAnyRole('CASHIER','MANAGER','ADMIN')")
+    @PreAuthorize("hasAnyRole('CASHIER','MANAGER')")
     public ResponseEntity<ApiResponse<InvoiceResponse>> checkout(
             @AuthenticationPrincipal UserPrincipal principal,
             @Valid @RequestBody CheckoutRequest req) {
@@ -150,6 +160,98 @@ public class POSController {
         InvoiceResponse invoice = posService.checkout(
                 req, principal.getId(), warehouseId);
         return ResponseEntity.ok(ApiResponse.ok("Thanh toán thành công", invoice));
+    }
+
+    @PostMapping("/qr-checkout-init")
+    @PreAuthorize("hasAnyRole('CASHIER','MANAGER')")
+    public ResponseEntity<ApiResponse<Map<String, Object>>> initQrCheckout(
+            @AuthenticationPrincipal UserPrincipal principal,
+            @RequestParam(defaultValue = "PAYOS") String gateway,
+            @Valid @RequestBody CheckoutRequest req) {
+
+        UUID warehouseId = principal.getWarehouseId();
+        if (warehouseId == null) {
+            warehouseId = getDefaultWarehouseId();
+        }
+
+        if (warehouseId == null) {
+            throw new BusinessException("NO_WAREHOUSE",
+                    "Vui lòng chọn chi nhánh làm việc trước khi thao tác POS.");
+        }
+
+        // Validate shift
+        sme.backend.entity.Shift shift = shiftService.getOpenShiftByCashier(principal.getId());
+        if (!shift.getId().equals(req.getShiftId())) {
+            throw new BusinessException("SHIFT_MISMATCH",
+                    "shiftId không khớp với ca làm việc đang mở");
+        }
+
+        // Calculate amount
+        BigDecimal totalAmount = BigDecimal.ZERO;
+        for (CheckoutRequest.CartItemRequest item : req.getItems()) {
+            totalAmount = totalAmount.add(item.getUnitPrice().multiply(BigDecimal.valueOf(item.getQuantity())));
+        }
+
+        BigDecimal discountAmount = BigDecimal.ZERO;
+        if (req.getOrderDiscountAmt() != null) {
+            discountAmount = discountAmount.add(req.getOrderDiscountAmt());
+        }
+        if (req.getCouponDiscountAmt() != null) {
+            discountAmount = discountAmount.add(req.getCouponDiscountAmt());
+        }
+
+        int pointsToUse = req.getPointsToUse() != null ? req.getPointsToUse() : 0;
+        if (pointsToUse > 0) {
+            BigDecimal pointsDiscount = BigDecimal.valueOf(pointsToUse)
+                    .multiply(BigDecimal.valueOf(appProperties.getBusiness().getLoyaltyPointsRedeemValue()));
+            discountAmount = discountAmount.add(pointsDiscount);
+        }
+
+        if (discountAmount.compareTo(totalAmount) > 0) discountAmount = totalAmount;
+        BigDecimal finalAmount = totalAmount.subtract(discountAmount);
+
+        // Generate temporary POS order code
+        String orderCodeStr = String.valueOf(System.currentTimeMillis());
+        
+        // Save to Redis (TTL 15 mins)
+        PosCheckoutDraft draft = PosCheckoutDraft.builder()
+                .checkoutRequest(req)
+                .cashierId(principal.getId())
+                .warehouseId(warehouseId)
+                .amount(finalAmount.longValue())
+                .build();
+                
+        redisTemplate.opsForValue().set("pos_checkout:" + orderCodeStr, draft, 15, java.util.concurrent.TimeUnit.MINUTES);
+
+        String description = "POS " + orderCodeStr;
+        String checkoutUrl = "";
+        String qrCode = null;
+
+        if ("VNPAY".equalsIgnoreCase(gateway)) {
+            checkoutUrl = vnPayService.createPaymentUrl(orderCodeStr, finalAmount.longValue(), description, "http://localhost:3000/pos/payment-return", "127.0.0.1");
+        } else {
+            Map<String, Object> payosRes = payosService.createPaymentLink(orderCodeStr, finalAmount.longValue(), description, "http://localhost:3000/pos/payment-return", "http://localhost:3000/pos/payment-return");
+            if (payosRes.containsKey("data") && payosRes.get("data") != null) {
+                Map<String, Object> data = (Map<String, Object>) payosRes.get("data");
+                checkoutUrl = (String) data.get("checkoutUrl");
+                if (data.containsKey("qrCode")) {
+                    qrCode = (String) data.get("qrCode");
+                }
+            } else {
+                throw new BusinessException("PAYMENT_ERROR", "Lỗi tạo link thanh toán PayOS: " + payosRes.get("desc"));
+            }
+        }
+
+        Map<String, Object> responseData = new java.util.HashMap<>();
+        responseData.put("checkoutUrl", checkoutUrl);
+        responseData.put("orderCode", orderCodeStr);
+        responseData.put("amount", finalAmount);
+        responseData.put("gateway", gateway.toUpperCase());
+        if (qrCode != null) {
+            responseData.put("qrCode", qrCode);
+        }
+
+        return ResponseEntity.ok(ApiResponse.ok("Khởi tạo mã QR thành công", responseData));
     }
 
     @GetMapping("/invoices/{id}")
@@ -181,18 +283,19 @@ public class POSController {
             @RequestParam(required = false) Instant to,
             @RequestParam(required = false) String paymentMethod,
             @RequestParam(defaultValue = "0") int page,
-            @RequestParam(defaultValue = "20") int size) {
+            @RequestParam(defaultValue = "20") int size,
+            @RequestParam(required = false) UUID warehouseId) {
 
-        UUID warehouseId = principal.getWarehouseId();
+        UUID targetWarehouseId = principal.getWarehouseId();
         if (principal.getAuthorities().stream().anyMatch(a -> a.getAuthority().equals("ROLE_ADMIN"))) {
-            warehouseId = null;
+            targetWarehouseId = warehouseId;
         }
 
         String kw = (keyword != null && !keyword.trim().isEmpty()) ? keyword.trim() : null;
         String pm = (paymentMethod != null && !paymentMethod.trim().isEmpty()) ? paymentMethod.trim() : null;
         String t = (type != null && !type.trim().isEmpty()) ? type.trim() : null;
         return ResponseEntity.ok(ApiResponse
-                .ok(posService.searchInvoices(shiftId, warehouseId, t, kw, from, to, pm, PageRequest.of(page, size))));
+                .ok(posService.searchInvoices(shiftId, targetWarehouseId, t, kw, from, to, pm, PageRequest.of(page, size))));
     }
 
     @GetMapping("/invoices/code/{code}")
@@ -209,14 +312,26 @@ public class POSController {
     public static class VoidInvoiceRequest {
         private UUID shiftId;
         private String reason;
-        public UUID getShiftId() { return shiftId; }
-        public void setShiftId(UUID shiftId) { this.shiftId = shiftId; }
-        public String getReason() { return reason; }
-        public void setReason(String reason) { this.reason = reason; }
+
+        public UUID getShiftId() {
+            return shiftId;
+        }
+
+        public void setShiftId(UUID shiftId) {
+            this.shiftId = shiftId;
+        }
+
+        public String getReason() {
+            return reason;
+        }
+
+        public void setReason(String reason) {
+            this.reason = reason;
+        }
     }
 
     @PostMapping("/invoices/{id}/void")
-    @PreAuthorize("hasAnyRole('MANAGER','ADMIN')")
+    @PreAuthorize("hasAnyRole('CASHIER','MANAGER')")
     public ResponseEntity<?> voidInvoice(
             @PathVariable UUID id,
             @AuthenticationPrincipal UserPrincipal principal,
@@ -227,7 +342,8 @@ public class POSController {
             return ResponseEntity.ok(ApiResponse.ok("Hủy hóa đơn thành công", invoice));
         } catch (Exception e) {
             e.printStackTrace();
-            return ResponseEntity.status(500).body(java.util.Map.of("message", "Lỗi nội bộ: " + e.getMessage(), "cause", e.getCause() != null ? e.getCause().toString() : "null"));
+            return ResponseEntity.status(500).body(java.util.Map.of("message", "Lỗi nội bộ: " + e.getMessage(), "cause",
+                    e.getCause() != null ? e.getCause().toString() : "null"));
         }
     }
 
@@ -282,7 +398,7 @@ public class POSController {
     }
 
     @PostMapping("/refund")
-    @PreAuthorize("hasAnyRole('CASHIER','MANAGER','ADMIN')")
+    @PreAuthorize("hasAnyRole('CASHIER','MANAGER')")
     public ResponseEntity<ApiResponse<InvoiceResponse>> refund(
             @AuthenticationPrincipal sme.backend.security.UserPrincipal principal, // Dùng đường dẫn tuyệt đối an toàn
             @RequestBody RefundRequestDTO req) {

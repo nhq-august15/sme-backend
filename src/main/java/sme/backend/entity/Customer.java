@@ -44,12 +44,6 @@ public class Customer extends BaseEntity {
     @Builder.Default
     private Integer loyaltyPoints = 0;
 
-    /**
-     * Hạng thành viên tự động nâng cấp theo điểm tích lũy:
-     * STANDARD: 0 - 499 điểm
-     * SILVER:   500 - 1999 điểm
-     * GOLD:     2000+ điểm
-     */
     @Enumerated(EnumType.STRING)
     @Column(name = "customer_tier", length = 50)
     @Builder.Default
@@ -77,30 +71,20 @@ public class Customer extends BaseEntity {
         ONLINE, POS
     }
 
-    /**
-     * Cộng điểm và tự động nâng hạng
-     */
     public void addPoints(int points) {
         this.loyaltyPoints += points;
         updateTier();
     }
 
-    /**
-     * Trừ điểm (đổi thưởng)
-     */
     public void deductPoints(int points) {
         if (this.loyaltyPoints < points) {
             throw new IllegalStateException("Điểm tích lũy không đủ.");
         }
         this.loyaltyPoints -= points;
-        // KHÔNG gọi updateTier() ở đây để tránh bị xuống hạng khi tiêu điểm
     }
 
-    /**
-     * Nâng hạng dựa trên Tổng chi tiêu (totalSpent)
-     */
     private void updateTier() {
-        // Giả sử mốc Silver là chi tiêu trên 5 triệu (tương ứng tích được 500 điểm nếu tỷ lệ tích là 1%)
+
         BigDecimal silverThreshold = new BigDecimal("5000000"); 
         BigDecimal goldThreshold = new BigDecimal("20000000");
 

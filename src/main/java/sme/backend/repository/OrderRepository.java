@@ -75,6 +75,30 @@ public interface OrderRepository extends JpaRepository<Order, UUID> {
                              @Param("keyword") String keyword,
                              Pageable pageable);
 
+    @Query("""
+        SELECT 
+            COUNT(o) AS totalCount,
+            COALESCE(SUM(CASE WHEN o.status = :pendingStatus THEN 1 ELSE 0 END), 0) AS pendingCount,
+            COALESCE(SUM(CASE WHEN o.paymentStatus = :paidStatus THEN 1 ELSE 0 END), 0) AS paidCount,
+            COALESCE(SUM(CASE WHEN o.status <> :cancelledStatus THEN o.finalAmount ELSE 0.0 END), 0.0) AS totalRevenue
+        FROM Order o
+        WHERE (:warehouseId IS NULL OR o.assignedWarehouseId = :warehouseId)
+        AND (:status IS NULL OR o.status = :status)
+        AND (:type IS NULL OR o.type = :type)
+        AND (:keyword IS NULL OR :keyword = ''
+             OR LOWER(o.code) LIKE LOWER(CONCAT('%', :keyword, '%'))
+             OR LOWER(o.shippingPhone) LIKE LOWER(CONCAT('%', :keyword, '%'))
+             OR LOWER(o.shippingName) LIKE LOWER(CONCAT('%', :keyword, '%'))
+             )
+        """)
+    java.util.Map<String, Object> getOrderStats(@Param("warehouseId") UUID warehouseId,
+                                                @Param("status") Order.OrderStatus status,
+                                                @Param("type") Order.OrderType type,
+                                                @Param("keyword") String keyword,
+                                                @Param("pendingStatus") Order.OrderStatus pendingStatus,
+                                                @Param("paidStatus") Order.PaymentStatus paidStatus,
+                                                @Param("cancelledStatus") Order.OrderStatus cancelledStatus);
+
     @Query("SELECT o FROM Order o WHERE o.paymentMethod != 'COD' AND o.paymentStatus = 'UNPAID' AND o.status = 'PAYMENT_PENDING' AND o.createdAt <= :expiryTime")
     List<Order> findExpiredPendingOrders(@Param("expiryTime") Instant expiryTime);
 }

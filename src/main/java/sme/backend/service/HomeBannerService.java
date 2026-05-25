@@ -20,7 +20,8 @@ public class HomeBannerService {
     @Transactional(readOnly = true)
     public List<HomeBanner> getActiveBanners(String bannerType) {
         if (bannerType != null && !bannerType.isBlank()) {
-            return homeBannerRepository.findByIsActiveTrueAndBannerTypeOrderBySortOrderAsc(HomeBanner.BannerType.valueOf(bannerType));
+            return homeBannerRepository
+                    .findByIsActiveTrueAndBannerTypeOrderBySortOrderAsc(HomeBanner.BannerType.valueOf(bannerType));
         }
         return homeBannerRepository.findActiveBanners();
     }
@@ -46,15 +47,24 @@ public class HomeBannerService {
         HomeBanner banner = homeBannerRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("HomeBanner", id));
 
-        if (req.getTitle() != null) banner.setTitle(req.getTitle());
-        if (req.getImageUrl() != null) banner.setImageUrl(req.getImageUrl());
-        if (req.getLinkUrl() != null) banner.setLinkUrl(req.getLinkUrl());
-        if (req.getButtonText() != null) banner.setButtonText(req.getButtonText());
-        if (req.getSortOrder() != null) banner.setSortOrder(req.getSortOrder());
-        if (req.getBannerType() != null) banner.setBannerType(req.getBannerType());
-        if (req.getIsActive() != null) banner.setIsActive(req.getIsActive());
-        if (req.getStartDate() != null) banner.setStartDate(req.getStartDate());
-        if (req.getEndDate() != null) banner.setEndDate(req.getEndDate());
+        if (req.getTitle() != null)
+            banner.setTitle(req.getTitle());
+        if (req.getImageUrl() != null)
+            banner.setImageUrl(req.getImageUrl());
+        if (req.getLinkUrl() != null)
+            banner.setLinkUrl(req.getLinkUrl());
+        if (req.getButtonText() != null)
+            banner.setButtonText(req.getButtonText());
+        if (req.getSortOrder() != null)
+            banner.setSortOrder(req.getSortOrder());
+        if (req.getBannerType() != null)
+            banner.setBannerType(req.getBannerType());
+        if (req.getIsActive() != null)
+            banner.setIsActive(req.getIsActive());
+        if (req.getStartDate() != null)
+            banner.setStartDate(req.getStartDate());
+        if (req.getEndDate() != null)
+            banner.setEndDate(req.getEndDate());
 
         return homeBannerRepository.save(banner);
     }
