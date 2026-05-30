@@ -280,8 +280,12 @@ public interface InvoiceRepository extends JpaRepository<Invoice, UUID> {
               AND (CAST(:keyword AS VARCHAR) IS NULL
                    OR LOWER(i.code) LIKE LOWER(CONCAT('%', CAST(:keyword AS VARCHAR), '%'))
                    OR (LOWER(CAST(:keyword AS VARCHAR)) = 'khách lẻ' AND i.customer_id IS NULL))
+              AND (CAST(:from AS TIMESTAMPTZ) IS NULL OR i.created_at >= CAST(:from AS TIMESTAMPTZ))
+              AND (CAST(:to AS TIMESTAMPTZ) IS NULL OR i.created_at <= CAST(:to AS TIMESTAMPTZ))
             """, nativeQuery = true)
     Map<String, Object> getInvoiceStats(@Param("warehouseId") UUID warehouseId,
                                         @Param("type") String type,
-                                        @Param("keyword") String keyword);
+                                        @Param("keyword") String keyword,
+                                        @Param("from") Instant from,
+                                        @Param("to") Instant to);
 }

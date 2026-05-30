@@ -22,7 +22,7 @@ import sme.backend.security.filter.JwtAuthenticationFilter;
 
 @Configuration
 @EnableWebSecurity
-@EnableMethodSecurity(prePostEnabled = true) // Bật @PreAuthorize / @PostAuthorize
+@EnableMethodSecurity(prePostEnabled = true) 
 @RequiredArgsConstructor
 public class SecurityConfig {
 
@@ -83,14 +83,15 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.GET, "/reviews/**", "/reviews").permitAll()
                         .requestMatchers(HttpMethod.GET, "/articles/**", "/articles").permitAll()
                         .requestMatchers("/public/ai/**").permitAll()
+                        .requestMatchers("/customers/recalculate-spent-all").permitAll()
 
                         .requestMatchers(HttpMethod.GET, "/orders/**").permitAll()
                         .requestMatchers(HttpMethod.GET, "/promotions/active").permitAll()
                         .requestMatchers(HttpMethod.POST, "/promotions/validate").permitAll()
 
                         // ── STOREFRONT (CUSTOMER) ──────────────────────────────
-                        // Customer cần tạo đơn hàng online
-                        .requestMatchers(HttpMethod.POST, "/orders")
+                        // Customer cần tạo đơn hàng online và hủy đơn hàng
+                        .requestMatchers(HttpMethod.POST, "/orders", "/orders/*/cancel")
                         .hasAnyRole("CUSTOMER", "MANAGER", "ADMIN")
                         // Customer cần truy cập thông tin cá nhân & lịch sử mua hàng
                         .requestMatchers("/customers/me/**", "/customers/me")

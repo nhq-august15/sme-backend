@@ -2,6 +2,8 @@ package sme.backend.service;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+
+import java.util.Optional;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import sme.backend.config.AppProperties;
@@ -20,19 +22,7 @@ import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 
-/**
- * POSService - Checkout Engine
- *
- * Xử lý toàn bộ luồng thanh toán POS theo thứ tự ACID:
- * 1. Validate shift đang mở
- * 2. Validate tồn kho từng sản phẩm
- * 3. Tính discount + điểm
- * 4. Trừ kho (Optimistic Lock)
- * 5. Tạo Invoice + InvoiceItems + InvoicePayments
- * 6. Ghi Cashbook transactions
- * 7. Cộng điểm khách hàng
- * 8. Return InvoiceResponse để Frontend in hóa đơn
- */
+
 @Service
 @RequiredArgsConstructor
 @Slf4j
@@ -56,7 +46,8 @@ public class POSService {
         public void fixDbConstraints() {
                 try {
                         jdbcTemplate.execute("ALTER TABLE invoices DROP CONSTRAINT IF EXISTS invoices_type_check;");
-                        log.info("Đã xóa constraint invoices_type_check cũ thành công để hỗ trợ VOIDED.");
+                        jdbcTemplate.execute("ALTER TABLE invoice_payments DROP CONSTRAINT IF EXISTS invoice_payments_method_check;");
+                        log.info("Đã xóa constraint cũ thành công để hỗ trợ giá trị Enum mới.");
                 } catch (Exception e) {
                         log.warn("Không thể xóa constraint: {}", e.getMessage());
                 }
@@ -342,9 +333,11 @@ public class POSService {
 
                 org.springframework.data.domain.Page<InvoiceResponse> mapped = paged.map(inv -> {
                         String customerName = "Khách lẻ";
+                        String customerPhone = "—";
                         if (inv.getCustomerId() != null) {
-                                customerName = customerRepository.findById(inv.getCustomerId())
-                                                .map(Customer::getFullName).orElse("Khách lẻ");
+                                Optional<Customer> customerOpt = customerRepository.findById(inv.getCustomerId());
+                                customerName = customerOpt.map(Customer::getFullName).orElse("Khách lẻ");
+                                customerPhone = customerOpt.map(Customer::getPhoneNumber).orElse("—");
                         }
                         String warehouseName = null;
                         if (inv.getWarehouseId() != null) {
@@ -395,6 +388,7 @@ public class POSService {
                                         .finalAmount(inv.getFinalAmount())
                                         .customerId(inv.getCustomerId())
                                         .customerName(customerName)
+                                        .customerPhone(customerPhone)
                                         .cashierName(cashierName)
                                         .warehouseId(inv.getWarehouseId())
                                         .warehouseName(warehouseName)

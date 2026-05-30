@@ -49,5 +49,6 @@ public class CreateProductRequest {
     private String coverType;
     private String language;
     private UUID authorId;
+    private String author;
 
 }

@@ -38,6 +38,7 @@ public class ProductResponse {
     private String coverType;
     private String language;
     private UUID authorId;
+    private String author;
     private Double averageRating;
     private Integer totalReviews;
     private Integer soldQuantity;

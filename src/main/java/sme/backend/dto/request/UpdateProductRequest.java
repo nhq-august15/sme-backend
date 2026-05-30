@@ -50,6 +50,7 @@ public class UpdateProductRequest {
     private String coverType;
     private String language;
     private UUID authorId;
+    private String author;
 
     // Custom setter để tự động kích hoạt cờ cập nhật Supplier
     public void setSupplierId(UUID supplierId) {

@@ -36,6 +36,6 @@ public class InvoicePayment extends BaseSimpleEntity {
     private String reference;
 
     public enum PaymentMethod {
-        CASH, CARD, MOMO, VNPAY, POINTS
+        CASH, CARD, MOMO, VNPAY, POINTS, BANK_TRANSFER
     }
 }

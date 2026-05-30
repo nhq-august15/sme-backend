@@ -91,6 +91,9 @@ public class Product extends BaseEntity {
     @Column(name = "author_id")
     private UUID authorId;
 
+    @Column(name = "author", length = 255)
+    private String author;
+
     @Column(name = "average_rating")
     @Builder.Default
     private Double averageRating = 0.0;

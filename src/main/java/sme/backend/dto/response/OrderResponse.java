@@ -53,6 +53,7 @@ public class OrderResponse {
         private BigDecimal unitPrice;
         private BigDecimal subtotal;
         private Boolean isReviewed; // <-- ĐÃ THÊM
+        private String imageUrl;
     }
 
     @Data @Builder

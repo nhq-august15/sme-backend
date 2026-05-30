@@ -58,8 +58,8 @@ public class Warehouse extends BaseEntity {
     private Boolean isAcceptingOrders = true;
 
     public enum WarehouseType {
-        MAIN,    // Kho tổng
-        BRANCH,  // Chi nhánh
-        DROPSHIP // Kho dropship
+        MAIN,    
+        BRANCH,  
+        DROPSHIP 
     }
 }

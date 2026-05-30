@@ -83,6 +83,7 @@ public class ProductService {
                 .dimensions(req.getDimensions()).coverType(req.getCoverType())
                 .language(req.getLanguage() != null ? req.getLanguage() : "Tiếng Việt")
                 .authorId(req.getAuthorId())
+                .author(req.getAuthor())
                 .isActive(true).build();
 
         Product saved = productRepository.save(product);
@@ -142,6 +143,7 @@ public class ProductService {
         if (req.getCoverType() != null) product.setCoverType(req.getCoverType());
         if (req.getLanguage() != null) product.setLanguage(req.getLanguage());
         if (req.getAuthorId() != null) product.setAuthorId(req.getAuthorId());
+        if (req.getAuthor() != null) product.setAuthor(req.getAuthor());
 
         // Nếu client gửi imageUrl đơn lẻ (backward compat)
         if (req.getImageUrls() != null) {
@@ -338,6 +340,7 @@ public class ProductService {
                 .coverType(p.getCoverType())
                 .language(p.getLanguage())
                 .authorId(p.getAuthorId())
+                .author(p.getAuthor())
                 .averageRating(p.getAverageRating())
                 .totalReviews(p.getTotalReviews())
                 .soldQuantity(p.getSoldQuantity())

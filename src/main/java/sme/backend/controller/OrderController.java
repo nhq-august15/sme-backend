@@ -22,6 +22,7 @@ import sme.backend.repository.CustomerRepository;
 import sme.backend.security.UserPrincipal;
 import sme.backend.service.OrderService;
 
+import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -60,6 +61,10 @@ public class OrderController {
             @RequestParam(required = false) String status,
             @RequestParam(required = false) String type,
             @RequestParam(required = false) String keyword, 
+            @RequestParam(required = false) Instant fromDate,
+            @RequestParam(required = false) Instant toDate,
+            @RequestParam(required = false) String paymentStatus,
+            @RequestParam(required = false) String provinceCode,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size,
             @RequestParam(required = false) UUID warehouseId) {
@@ -76,9 +81,14 @@ public class OrderController {
             try { orderType = Order.OrderType.valueOf(type.toUpperCase()); } catch (IllegalArgumentException ignored) {}
         }
 
+        Order.PaymentStatus pStatus = null;
+        if (paymentStatus != null && !paymentStatus.isBlank() && !paymentStatus.equals("ALL")) {
+            try { pStatus = Order.PaymentStatus.valueOf(paymentStatus.toUpperCase()); } catch (IllegalArgumentException ignored) {}
+        }
+
         var pageable = PageRequest.of(page, size, Sort.by("createdAt").descending());
         return ResponseEntity.ok(ApiResponse.ok(
-                PageResponse.of(orderService.getOrders(wid, orderStatus, orderType, keyword, pageable))));
+                PageResponse.of(orderService.getOrders(wid, orderStatus, orderType, keyword, fromDate, toDate, pStatus, provinceCode, pageable))));
     }
 
     @GetMapping("/stats")
@@ -88,6 +98,10 @@ public class OrderController {
             @RequestParam(required = false) String status,
             @RequestParam(required = false) String type,
             @RequestParam(required = false) String keyword,
+            @RequestParam(required = false) Instant fromDate,
+            @RequestParam(required = false) Instant toDate,
+            @RequestParam(required = false) String paymentStatus,
+            @RequestParam(required = false) String provinceCode,
             @RequestParam(required = false) UUID warehouseId,
             @RequestParam(required = false) String source) {
 
@@ -103,7 +117,12 @@ public class OrderController {
             try { orderType = Order.OrderType.valueOf(type.toUpperCase()); } catch (IllegalArgumentException ignored) {}
         }
 
-        return ResponseEntity.ok(ApiResponse.ok(orderService.getOrderStats(wid, orderStatus, orderType, keyword, source)));
+        Order.PaymentStatus pStatus = null;
+        if (paymentStatus != null && !paymentStatus.isBlank() && !paymentStatus.equals("ALL")) {
+            try { pStatus = Order.PaymentStatus.valueOf(paymentStatus.toUpperCase()); } catch (IllegalArgumentException ignored) {}
+        }
+
+        return ResponseEntity.ok(ApiResponse.ok(orderService.getOrderStats(wid, orderStatus, orderType, keyword, fromDate, toDate, pStatus, provinceCode, source)));
     }
 
     @GetMapping("/pending")
@@ -141,6 +160,28 @@ public class OrderController {
 
         OrderResponse updated = orderService.updateStatus(id, newStatus, note, trackingCode, shippingProvider, principal.getId().toString());
         return ResponseEntity.ok(ApiResponse.ok("Cập nhật trạng thái thành công", updated));
+    }
+
+    @PostMapping("/{id}/cancel")
+    @PreAuthorize("hasAnyRole('CUSTOMER','CASHIER','MANAGER','ADMIN')")
+    public ResponseEntity<ApiResponse<OrderResponse>> cancelOrder(
+            @PathVariable UUID id,
+            @RequestBody Map<String, String> body,
+            @AuthenticationPrincipal UserPrincipal principal) {
+        
+        String reason = body.get("reason");
+        String changedBy = principal != null ? principal.getId().toString() : "SYSTEM";
+        
+        if (principal != null && "ROLE_CUSTOMER".equals(principal.getRole().name())) {
+             OrderResponse order = orderService.getOrderDetail(id);
+             Customer customer = customerRepository.findByUserId(principal.getId()).orElse(null);
+             if (customer == null || order.getCustomerId() == null || !customer.getId().equals(order.getCustomerId())) {
+                 throw new BusinessException("FORBIDDEN", "Không được phép hủy đơn hàng này.");
+             }
+        }
+        
+        OrderResponse updated = orderService.updateStatus(id, "CANCELLED", reason, null, null, changedBy);
+        return ResponseEntity.ok(ApiResponse.ok("Hủy đơn hàng thành công", updated));
     }
 
     @PatchMapping("/{id}/assign-warehouse")

@@ -28,8 +28,7 @@ public class NotificationController {
     @PreAuthorize("hasAnyRole('CASHIER','MANAGER','ADMIN')")
     public ResponseEntity<ApiResponse<List<Notification>>> getUnread(
             @AuthenticationPrincipal UserPrincipal principal) {
-        // Sử dụng Enum so sánh an toàn hơn String
-        UUID userId = (principal.getRole() == User.UserRole.ROLE_ADMIN) ? null : principal.getId();
+        UUID userId = principal.getId();
         return ResponseEntity.ok(ApiResponse.ok(notificationService.getUnread(userId)));
     }
 
@@ -37,8 +36,7 @@ public class NotificationController {
     @PreAuthorize("hasAnyRole('CASHIER','MANAGER','ADMIN')")
     public ResponseEntity<ApiResponse<Long>> countUnread(
             @AuthenticationPrincipal UserPrincipal principal) {
-        // Sử dụng Enum so sánh an toàn hơn String
-        UUID userId = (principal.getRole() == User.UserRole.ROLE_ADMIN) ? null : principal.getId();
+        UUID userId = principal.getId();
         return ResponseEntity.ok(ApiResponse.ok(notificationService.countUnread(userId)));
     }
 
@@ -47,7 +45,7 @@ public class NotificationController {
     public ResponseEntity<ApiResponse<Page<Notification>>> getAll(
             @AuthenticationPrincipal UserPrincipal principal,
             @PageableDefault(size = 10) Pageable pageable) {
-        UUID userId = (principal.getRole() == User.UserRole.ROLE_ADMIN) ? null : principal.getId();
+        UUID userId = principal.getId();
         return ResponseEntity.ok(ApiResponse.ok(notificationService.getAll(userId, pageable)));
     }
 
@@ -61,8 +59,7 @@ public class NotificationController {
     @PatchMapping("/read-all")
     @PreAuthorize("hasAnyRole('CASHIER','MANAGER','ADMIN')")
     public ResponseEntity<ApiResponse<Void>> markAllAsRead(@AuthenticationPrincipal UserPrincipal principal) {
-        // Sử dụng Enum so sánh an toàn hơn String
-        UUID userId = (principal.getRole() == User.UserRole.ROLE_ADMIN) ? null : principal.getId();
+        UUID userId = principal.getId();
         notificationService.markAllAsRead(userId);
         return ResponseEntity.ok(ApiResponse.ok("Đã đánh dấu đọc tất cả", null));
     }

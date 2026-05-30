@@ -268,27 +268,14 @@ public class NotificationService {
                 "type_order", order.getType() != null ? order.getType().name() : "DELIVERY");
         messagingTemplate.convertAndSend(topic, payload);
 
-        List<User> recipients = new java.util.ArrayList<>();
-        recipients.addAll(userRepository.findActiveManagersByWarehouse(warehouseId));
-        recipients.addAll(userRepository.findActiveCashiersByWarehouse(warehouseId));
+        saveNotificationForRecipients(
+                "NEW_ORDER",
+                "🛒 Đơn hàng mới",
+                String.format("🛒 Khách hàng vừa đặt đơn hàng online mới: %s. Trị giá: %,.0f VNĐ.",
+                        order.getCode(), order.getFinalAmount() != null ? order.getFinalAmount() : 0),
+                payload,
+                warehouseId);
 
-        if (recipients.isEmpty()) {
-            userRepository.findByRoleAndIsActiveTrue(User.UserRole.ROLE_ADMIN)
-                    .stream().findFirst().ifPresent(recipients::add);
-        }
-
-        for (User recipient : recipients) {
-            Notification notification = Notification.builder()
-                    .type("NEW_ORDER")
-                    .title("🛒 Đơn hàng mới")
-                    .message(String.format("🛒 Khách hàng vừa đặt đơn hàng online mới: %s. Trị giá: %,.0f VNĐ.",
-                            order.getCode(), order.getFinalAmount() != null ? order.getFinalAmount() : 0))
-                    .payload(payload)
-                    .isRead(false)
-                    .userId(recipient.getId())
-                    .build();
-            notificationRepository.save(notification);
-        }
         log.debug("New order notification saved and sent: order={}", order.getCode());
     }
 

@@ -37,6 +37,7 @@ public class OrderService {
     private final EmailService emailService;
     private final InvoiceRepository invoiceRepository;
     private final ProductReviewRepository productReviewRepository; // <-- ĐÃ THÊM
+    private final org.springframework.messaging.simp.SimpMessagingTemplate messagingTemplate;
 
     private final EntityManager entityManager;
 
@@ -436,6 +437,20 @@ public class OrderService {
                 order.setPaymentStatus(Order.PaymentStatus.PAID);
                 recordCashRevenue(order, changedBy);
             }
+            
+            // Cập nhật tổng chi tiêu và điểm tích lũy cho khách hàng (tránh cộng dồn nếu đã DELIVERED trước đó)
+            boolean alreadyDelivered = order.getStatusHistory().stream()
+                    .anyMatch(h -> "DELIVERED".equals(h.getOldStatus()));
+            if (!alreadyDelivered && order.getCustomerId() != null) {
+                Customer customer = customerRepository.findById(order.getCustomerId()).orElse(null);
+                if (customer != null) {
+                    BigDecimal finalAmount = order.getFinalAmount();
+                    int pointsEarned = finalAmount.divide(new BigDecimal("10000"), 0, java.math.RoundingMode.DOWN).intValue();
+                    customer.addPoints(pointsEarned);
+                    customer.setTotalSpent((customer.getTotalSpent() != null ? customer.getTotalSpent() : BigDecimal.ZERO).add(finalAmount));
+                    customerRepository.save(customer);
+                }
+            }
         }
 
         if (status == Order.OrderStatus.PENDING || status == Order.OrderStatus.DELIVERED
@@ -453,6 +468,16 @@ public class OrderService {
                             order.getFinalAmount().doubleValue());
                 } catch (Exception e) {
                     log.warn("Không gửi được email cho đơn hàng {}: {}", order.getCode(), e.getMessage());
+                }
+            }
+            if (customer != null && customer.getUserId() != null) {
+                try {
+                    messagingTemplate.convertAndSend(
+                            "/topic/user/" + customer.getUserId() + "/orders",
+                            Map.of("type", "ORDER_STATUS_UPDATED", "orderId", order.getId(), "orderCode", order.getCode())
+                    );
+                } catch (Exception e) {
+                    log.warn("Lỗi khi gửi websocket cho customer {}: {}", customer.getUserId(), e.getMessage());
                 }
             }
         }
@@ -567,8 +592,8 @@ public class OrderService {
 
     @Transactional(readOnly = true)
     public Page<OrderResponse> getOrders(UUID warehouseId, Order.OrderStatus status, Order.OrderType type,
-            String keyword, Pageable pageable) {
-        return orderRepository.searchOrders(warehouseId, status, type, keyword, pageable)
+            String keyword, Instant fromDate, Instant toDate, Order.PaymentStatus paymentStatus, String provinceCode, Pageable pageable) {
+        return orderRepository.searchOrders(warehouseId, status, type, keyword, fromDate, toDate, paymentStatus, provinceCode, pageable)
                 .map(this::mapToSimpleResponse);
     }
 
@@ -658,6 +683,7 @@ public class OrderService {
                             .isbnBarcode(product != null ? product.getIsbnBarcode() : null).quantity(i.getQuantity())
                             .unitPrice(i.getUnitPrice()).subtotal(i.getSubtotal())
                             .isReviewed(isRev) // <-- ĐÃ THÊM
+                            .imageUrl(product != null ? product.getImageUrl() : null)
                             .build();
                 }).toList();
 
@@ -709,7 +735,7 @@ public class OrderService {
                 .items(items).statusHistory(history).build();
     }
 
-    public Map<String, Object> getOrderStats(UUID warehouseId, Order.OrderStatus status, Order.OrderType type, String keyword, String source) {
+    public Map<String, Object> getOrderStats(UUID warehouseId, Order.OrderStatus status, Order.OrderType type, String keyword, Instant fromDate, Instant toDate, Order.PaymentStatus paymentStatus, String provinceCode, String source) {
         long totalCount = 0;
         long pendingCount = 0;
         long paidCount = 0;
@@ -721,6 +747,10 @@ public class OrderService {
                 status, 
                 type, 
                 keyword,
+                fromDate,
+                toDate,
+                paymentStatus,
+                provinceCode,
                 Order.OrderStatus.PENDING,
                 Order.PaymentStatus.PAID,
                 Order.OrderStatus.CANCELLED
@@ -744,7 +774,7 @@ public class OrderService {
                 }
             }
             if (!"NONE".equals(invType)) {
-                Map<String, Object> iStats = invoiceRepository.getInvoiceStats(warehouseId, invType, keyword);
+                Map<String, Object> iStats = invoiceRepository.getInvoiceStats(warehouseId, invType, keyword, fromDate, toDate);
                 if (iStats != null) {
                     totalCount += ((Number) iStats.getOrDefault("totalCount", 0)).longValue();
                     pendingCount += ((Number) iStats.getOrDefault("pendingCount", 0)).longValue();

@@ -31,6 +31,7 @@ import sme.backend.service.WishlistService;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.math.BigDecimal;
 
 @RestController
 @RequestMapping("/customers")
@@ -250,6 +251,10 @@ public class CustomerController {
         
         Page<Invoice> invoices = invoiceRepository.findByCustomerIdOrderByCreatedAtDesc(id, pageable);
         Page<Order> orders = orderRepository.findByCustomerIdOrderByCreatedAtDesc(id, pageable);
+        
+        Customer customer = customerRepository.findById(id).orElse(null);
+        String custName = customer != null ? customer.getFullName() : null;
+        String custPhone = customer != null ? customer.getPhoneNumber() : null;
 
         List<Map<String, Object>> invoiceSummary = new java.util.ArrayList<>();
         for (Invoice inv : invoices.getContent()) {
@@ -260,6 +265,8 @@ public class CustomerController {
             map.put("totalAmount", inv.getTotalAmount());
             map.put("finalAmount", inv.getFinalAmount());
             map.put("createdAt", inv.getCreatedAt());
+            map.put("customerName", custName);
+            map.put("customerPhone", custPhone);
             
             List<Map<String, Object>> itemsList = new java.util.ArrayList<>();
             for (sme.backend.entity.InvoiceItem item : inv.getItems()) {
@@ -272,6 +279,7 @@ public class CustomerController {
                 itemMap.put("quantity", item.getQuantity());
                 itemMap.put("unitPrice", item.getUnitPrice());
                 itemMap.put("subtotal", item.getSubtotal());
+                productRepository.findById(item.getProductId()).ifPresent(p -> itemMap.put("imageUrl", p.getImageUrl()));
                 itemsList.add(itemMap);
             }
             map.put("items", itemsList);
@@ -290,6 +298,13 @@ public class CustomerController {
             map.put("paymentMethod", ord.getPaymentMethod() != null ? ord.getPaymentMethod() : "COD");
             map.put("paymentStatus", ord.getPaymentStatus() != null ? ord.getPaymentStatus().name() : "UNPAID");
             map.put("createdAt", ord.getCreatedAt());
+            map.put("shippingName", ord.getShippingName());
+            map.put("shippingPhone", ord.getShippingPhone());
+            map.put("shippingAddress", ord.getShippingAddress());
+            map.put("customerName", custName);
+            map.put("customerPhone", custPhone);
+            map.put("shippingFee", ord.getShippingFee());
+            map.put("discountAmount", ord.getDiscountAmount());
             
             List<Map<String, Object>> itemsList = new java.util.ArrayList<>();
             for (sme.backend.entity.OrderItem item : ord.getItems()) {
@@ -305,6 +320,7 @@ public class CustomerController {
                 itemMap.put("unitPrice", item.getUnitPrice());
                 itemMap.put("subtotal", item.getSubtotal());
                 itemMap.put("isReviewed", isRev);
+                productRepository.findById(item.getProductId()).ifPresent(p -> itemMap.put("imageUrl", p.getImageUrl()));
                 itemsList.add(itemMap);
             }
             map.put("items", itemsList);
@@ -402,5 +418,21 @@ public class CustomerController {
         return ResponseEntity.ok(ApiResponse.ok(
                 customerRepository.findById(id)
                         .orElseThrow(() -> new ResourceNotFoundException("Customer", id))));
+    }
+
+    @GetMapping("/recalculate-spent-all")
+    public String recalculateAll() {
+        List<Customer> customers = customerRepository.findAll();
+        for (Customer c : customers) {
+            BigDecimal totalInvoice = invoiceRepository.findByCustomerIdOrderByCreatedAtDesc(c.getId(), PageRequest.of(0, 10000))
+                    .stream().filter(i -> i.getType() == Invoice.InvoiceType.SALE)
+                    .map(Invoice::getFinalAmount).reduce(BigDecimal.ZERO, BigDecimal::add);
+            BigDecimal totalOrder = orderRepository.findByCustomerIdOrderByCreatedAtDesc(c.getId(), PageRequest.of(0, 10000))
+                    .stream().filter(o -> o.getStatus() == Order.OrderStatus.DELIVERED)
+                    .map(Order::getFinalAmount).reduce(BigDecimal.ZERO, BigDecimal::add);
+            c.setTotalSpent(totalInvoice.add(totalOrder));
+            customerRepository.save(c);
+        }
+        return "OK";
     }
 }

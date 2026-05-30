@@ -7,13 +7,18 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Description;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
-import sme.backend.dto.ai.ProductSearchRequest;
-import sme.backend.dto.ai.ProductSearchResponse;
+import sme.backend.dto.ai.*;
 import sme.backend.entity.Product;
+import sme.backend.entity.Category;
 import sme.backend.repository.ProductRepository;
+import sme.backend.repository.CategoryRepository;
 
 import java.util.List;
+import java.util.Map;
 import java.util.function.Function;
+import java.time.Instant;
+import java.time.temporal.ChronoUnit;
+import java.math.BigDecimal;
 
 @Configuration
 public class CustomerAiConfig {
@@ -31,10 +36,10 @@ public class CustomerAiConfig {
                         
                         NGUYÊN TẮC BẢO MẬT:
                         - TUYỆT ĐỐI KHÔNG chia sẻ thông tin về giá nhập (macPrice), lợi nhuận, chi phí quản lý, tồn kho thực tế ở các chi nhánh, thông tin người dùng khác hay các số liệu nhạy cảm của cửa hàng.
-                        - Chỉ sử dụng các công cụ tìm kiếm được cung cấp để lấy thông tin sản phẩm. Không tự ý bịa đặt tên sách hay thông tin không có trong cửa hàng.
+                        - Chỉ sử dụng các công cụ tìm kiếm được cung cấp để lấy thông tin sản phẩm, danh mục. Không tự ý bịa đặt tên sách hay thông tin không có trong cửa hàng.
                         - Nếu không tìm thấy sách khách yêu cầu, hãy xin lỗi và giới thiệu các chủ đề khác.
                         """)
-                .defaultFunctions("searchProductsFunction")
+                .defaultFunctions("searchProductsFunction", "getCategoriesFunction", "getTopSellingProductsFunction")
                 .build();
     }
 
@@ -52,6 +57,37 @@ public class CustomerAiConfig {
                                     ? p.getDescription().substring(0, 200) + "..." 
                                     : p.getDescription()
                     ))
+                    .toList();
+            return new ProductSearchResponse(products);
+        };
+    }
+
+    @Bean
+    @Description("Lấy danh sách tất cả các thể loại sách (danh mục) đang có bán tại cửa hàng")
+    public Function<CategorySearchRequest, CategorySearchResponse> getCategoriesFunction(CategoryRepository categoryRepository) {
+        return request -> {
+            List<String> categories = categoryRepository.findByIsActiveTrueOrderBySortOrder().stream()
+                    .map(Category::getName)
+                    .toList();
+            return new CategorySearchResponse(categories);
+        };
+    }
+
+    @Bean
+    @Description("Lấy danh sách các sách bán chạy nhất tại cửa hàng (Top selling books)")
+    public Function<TopSellingProductsRequest, ProductSearchResponse> getTopSellingProductsFunction(ProductRepository productRepository) {
+        return request -> {
+            int limit = (request.limit() != null && request.limit() > 0) ? request.limit() : 5;
+            // Get best selling products in the last 30 days
+            Instant fromDate = Instant.now().minus(30, ChronoUnit.DAYS);
+            Instant toDate = Instant.now();
+            List<Map<String, Object>> topProducts = productRepository.findTopSellingProducts(null, fromDate, toDate, limit, null);
+            
+            List<ProductSearchResponse.ProductDto> products = topProducts.stream()
+                    .map(map -> {
+                        String name = (String) map.get("name");
+                        return new ProductSearchResponse.ProductDto(name, BigDecimal.ZERO, "Sách bán chạy");
+                    })
                     .toList();
             return new ProductSearchResponse(products);
         };
